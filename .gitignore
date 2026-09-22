@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.venv/
+.venv-local/
+__pycache__/
+*.pyc
+.databricks/
+src/app/app.yaml.bak
+.DS_Store

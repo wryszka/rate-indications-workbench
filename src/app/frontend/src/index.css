@@ -1,0 +1,24 @@
+@import './tokens.css';
+/* tiny additions only — tokens.css is the source of truth */
+a{color:inherit;text-decoration:none}
+.selectrow{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px}
+.selectrow .fld{display:flex;flex-direction:column;gap:4px}
+.selectrow label{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--mut)}
+select,input.txt{padding:8px 10px;border:1px solid var(--line2);border-radius:8px;font:inherit;background:#fff}
+input.num{width:92px;padding:6px 8px;border:1px solid var(--line2);border-radius:7px;font:inherit;text-align:right;font-variant-numeric:tabular-nums}
+.wf{display:flex;flex-direction:column;gap:6px}
+.wf .bar{display:flex;align-items:center;gap:10px;font-size:12.5px}
+.wf .barname{width:150px;flex-shrink:0;color:var(--slate2)}
+.wf .bartrack{flex:1;position:relative;height:18px;background:#f1f5f9;border-radius:5px}
+.wf .barfill{position:absolute;top:0;height:18px;border-radius:5px}
+.wf .barval{width:70px;text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
+.pos{color:var(--emerald)} .neg{color:var(--red)}
+details.exp{margin-bottom:16px;border:1px solid var(--line);border-radius:12px;background:#fff;padding:0 16px}
+details.exp summary{cursor:pointer;padding:12px 0;font-weight:600;font-size:13px;color:var(--slate2)}
+details.exp .body{padding:0 0 14px;color:var(--mut);font-size:13px;max-width:74ch;line-height:1.6}
+.aigrp{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--mut2);padding:10px 0 2px}
+.navcards{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}@media(max-width:900px){.navcards{grid-template-columns:1fr}}
+.navcard{display:block;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;box-shadow:var(--shadow)}
+.navcard:hover{border-color:var(--brand-line)}
+.navcard .t{font-weight:700;font-size:15px;margin-bottom:4px;display:flex;align-items:center;gap:8px}
+.navcard .d{color:var(--mut);font-size:13px}

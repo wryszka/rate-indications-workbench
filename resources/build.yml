@@ -1,0 +1,23 @@
+resources:
+  jobs:
+    rate_indications_full_build:
+      name: "[${bundle.target}] Rate Indications — Full Build"
+      tasks:
+        - task_key: setup
+          notebook_task:
+            notebook_path: ../src/00_setup/00_setup.py
+            base_parameters:
+              catalog: ${var.catalog_name}
+              schema: ${var.schema_name}
+        - task_key: generate_book
+          depends_on:
+            - task_key: setup
+          notebook_task:
+            notebook_path: ../src/01_data/01_generate_book.py
+            base_parameters:
+              catalog: ${var.catalog_name}
+              schema: ${var.schema_name}
+              book_flavour: ${var.book_flavour}
+              prospective_period: "2027"
+      queue:
+        enabled: true

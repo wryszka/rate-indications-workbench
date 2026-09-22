@@ -1,0 +1,60 @@
+bundle:
+  name: rate-indications-workbench
+
+variables:
+  catalog_name:
+    description: Unity Catalog for all demo objects (portable — sed to re-point)
+    default: lr_dev_aws_us_catalog
+  schema_name:
+    description: Single schema holding every table, view and function
+    default: rate_indications
+  warehouse_id:
+    description: Serverless SQL warehouse used by the app and the build jobs
+    default: ""
+  entity_name:
+    description: The (fictional) reporting undertaking
+    default: "Bricksurance SE"
+  book_flavour:
+    description: |
+      Which synthetic book to generate. "eu_commercial" (default) = European
+      commercial P&C (Property / General Liability / Commercial Motor across
+      DE/FR/IT/ES/NL). "us_retail" = US Retail P&C (Professional Liability / GL /
+      BOP across TX/CA/NY/FL/IL). The workbench is book-agnostic; this only
+      chooses the seed data.
+    default: "eu_commercial"
+  llm_endpoint:
+    description: Foundation Model endpoint for the "Explain Indication" assistant
+    default: "databricks-claude-sonnet-5"
+  app_service_principal_id:
+    description: |
+      The Databricks App service principal (appId). Empty on first deploy; capture
+      it after the app is created, set here, and redeploy so grants attach.
+    default: ""
+  genie_space_id:
+    description: Genie space over the indication tables (empty hides the tab)
+    default: ""
+
+targets:
+  dev:
+    mode: development
+    default: true
+    workspace:
+      host: https://fevm-lr-dev-aws-us.cloud.databricks.com
+      profile: DEV
+    variables:
+      catalog_name: lr_dev_aws_us_catalog
+      schema_name: rate_indications
+      warehouse_id: "a3b61648ea4809e3"
+
+sync:
+  include:
+    - src/app/app.yaml
+    - src/app/frontend/dist/**
+  exclude:
+    - src/app/.venv/
+    - src/app/frontend/node_modules/
+    - docs/
+    - data/
+
+include:
+  - resources/*.yml
