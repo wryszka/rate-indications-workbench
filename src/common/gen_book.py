@@ -8,6 +8,15 @@ so the same inputs always yield the same book (needed for reproducible demos).
 """
 from __future__ import annotations
 import hashlib, math, random
+from datetime import date
+
+# On-level premium coverage: a baseline rate level valid before the first event, so
+# the earning-aware (parallelogram) method has full history for the earliest cohort.
+BASELINE_DATE = date(2018, 1, 1)      # index 1.0 applies from here until the first change
+BASELINE_INDEX = 1.0
+REFERENCE_RATE_DATE = date(2026, 1, 1)  # latest experience end boundary
+POLICY_TERM_DAYS = 365
+LOSS_VALUATION_DATE = date(2026, 6, 30)
 
 # ----- book flavours ---------------------------------------------------------
 BOOKS = {
@@ -107,11 +116,19 @@ def generate(flavour: str = "eu_commercial", version: str = "v1", seed: str = "s
                 idx = round(idx * (1 + chg), 4)
                 rate_hist.append(dict(lob_code=lob_code, territory_code=terr_code,
                                       effective_year=yr, rate_change_pct=chg, rate_level_index=idx,
-                                      note="taken rate change"))
+                                      note="taken rate change",
+                                      rate_history_version=version,
+                                      event_id=f"{lob_code}-{terr_code}-{yr}",
+                                      effective_date=date(yr, 1, 1),   # assumed_from_year (synthetic)
+                                      status="implemented", date_source="assumed_from_year"))
             current_rate_level = idx
             rate_state.append(dict(lob_code=lob_code, territory_code=terr_code,
                                    current_rate_level=current_rate_level,
-                                   last_rate_change_pct=chg, last_effective_year=LAST_AY))
+                                   last_rate_change_pct=chg, last_effective_year=LAST_AY,
+                                   rate_history_version=version,
+                                   baseline_effective_date=BASELINE_DATE, baseline_rate_index=BASELINE_INDEX,
+                                   history_complete_from=BASELINE_DATE, reference_rate_date=REFERENCE_RATE_DATE,
+                                   policy_term_days=POLICY_TERM_DAYS, on_level_method="legacy_annual_index"))
             # per-segment loss-ratio noise so segments differ
             seg_lr = base_lr * rng.uniform(0.93, 1.09)
             rl_idx = {r["effective_year"]: r["rate_level_index"]
@@ -133,7 +150,9 @@ def generate(flavour: str = "eu_commercial", version: str = "v1", seed: str = "s
                     accident_year=yr, earned_premium=earned, written_premium=written,
                     exposure=round(claim_count * rng.uniform(6, 10), 1), claim_count=claim_count,
                     reported_incurred=reported, paid_to_date=paid,
-                    rate_level_index=rl_idx[yr], ldf_to_ultimate=ldf))
+                    rate_level_index=rl_idx[yr], ldf_to_ultimate=ldf,
+                    loss_valuation_date=LOSS_VALUATION_DATE,
+                    premium_basis="gross_earned_365d", loss_basis="reported_incurred_gross"))
                 # triangle: build cumulative incurred by dev lag up to current maturity
                 for lag in range(0, maturity + 1):
                     dev_ldf_remaining = _ldf_for_maturity(tail, maturity - lag)  # factor still to go at this lag

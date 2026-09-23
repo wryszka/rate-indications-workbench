@@ -22,7 +22,8 @@ owner (Step 3) → everyone (Step 4). **Total ≈ 12–15 min.** All data is syn
 ## Expected numbers (memorise — so you spot an anomaly)
 | Figure | Value |
 |---|---|
-| GL / Germany baseline indication | **+6.6%** (0.0658) |
+| GL / Germany baseline indication (legacy annual-index) | **+6.6%** (0.0658) |
+| GL / Germany with earning-aware (parallelogram) on-level | **+5.4%** (−1.1 pts — same losses, proper premium denominator) |
 | GL / Germany after severity 5.5%→8% + large-loss 4%→6% | **≈ +15.4%** |
 | Decomposition of that move | severity trend **≈ +8.0 pts**, large-loss **≈ +0.85 pts** (sums to the total) |
 | Portfolio (all 15 segments) | GWP **≈ €605.7m**, portfolio indication **+1.51%** ⇒ **≈ €9.1m** of rate movement |
@@ -92,10 +93,18 @@ move it in. Lowest-risk step there is.*
 - **IF-ASKED (do we rewrite everything?):** "No — this *is* your method, lifted. That's
   the whole point of the step."
 
-## Step 3 — "Now you get what the spreadsheet couldn't" (≈4 min)
-*Still no app. Governance and customisation come because it's on the platform. Use the
-SQL editor + Genie.*
-- **GO:** SQL editor.
+## Step 3 — "Now you get what the spreadsheet couldn't" (≈5 min)
+*Still no app. Governance, a better method, and customisation come because it's on the
+platform. Use the SQL editor + Genie (the earning-aware method is then shown live in the
+app in Step 4, where the toggle lives).*
+- **THE UPGRADE — earning-aware on-levelling (the headline of this step):**
+  - SAY: "Your spreadsheet on-levels premium with a crude annual index. The platform can
+    do it properly — the parallelogram method, from the actual rate-change dates."
+  - DO: open `src/app/on_level.py` (the analytic earning-share method) and note the
+    baseline stays the honest annual-index answer (**+6.6%**); the earning-aware method,
+    which you'll flip on in the app next, gives **+5.4%** for GL/Germany.
+  - SAY: "Same losses, same rates — the annual shortcut was over-stating the rate need by
+    ignoring that a mid-year change only earns gradually. −1.1 points, defensibly."
 - **DO — answer Step 1's two questions, live:**
   1. **Reproduce any number** (one row carries the whole basis):
      ```sql
@@ -137,6 +146,11 @@ SQL editor + Genie.*
   1. Portfolio: ~€605.7m book, **+1.51%** overall — "≈ €9m of rate movement, some
      segments up, some down." Click **General Liability / Germany** (**+6.6%** — same
      number).
+  0. **(the on-level upgrade, live)** In the On-level premium panel, switch the method from
+     **Legacy annual-index → Earning-aware (parallelogram)**. The indication recalculates to
+     **≈ +5.4%**, the raw vs on-level reported LR both show, and the decomposition leads with a
+     **"Earning-aware on-level"** step (≈ −1.1 pts). SAY: "The proper method, one toggle — the
+     spreadsheet couldn't do this." (Switch back to legacy for the rest, or keep it.)
   2. On Indications, raise **Severity trend** 5.5% → 8% and **Large-loss load** 4% → 6%;
      the indication recalculates live to **≈ +15.4%**. Point at the **decomposition**
      (severity ≈ +8 pts). Click **Explain** (Claude narrates it; note the live/cached

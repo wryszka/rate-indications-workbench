@@ -42,3 +42,22 @@ synthetic. Grain and key columns below.
   actor, from_status, to_status, calc_version, result_id, note, details`.
 - **approval_role** — magnitude-routed sign-off. `min_abs_change, max_abs_change,
   approver_role, note`.
+
+## On-level earned premium (added 2026-09-23, all nullable — additive migration)
+- **indication_experience** +`loss_valuation_date DATE`, `premium_basis STRING`,
+  `loss_basis STRING` (dataset metadata; scope of the synthetic reported incurred).
+- **rate_change_history** +`rate_history_version STRING`, `event_id STRING`,
+  `effective_date DATE` (actual inception/renewal date — required for the parallelogram method),
+  `status STRING` (implemented|proposed; MVP implemented only), `date_source STRING`
+  (observed|seeded|assumed_from_year — never implies an invented date was observed).
+  `rate_change_pct` stays a **decimal** (0.03 = +3%); `rate_level_index` is legacy/diagnostic.
+- **segment_rate_state** +`rate_history_version STRING`, `baseline_effective_date DATE`,
+  `baseline_rate_index DOUBLE`, `history_complete_from DATE`, `reference_rate_date DATE`,
+  `policy_term_days INT`, `on_level_method STRING` (default method for the segment).
+- **indication_scenarios** +`premium_settings_json STRING` (method, reference date, baseline,
+  term, history version, bounded scenario-local event overrides — validated object; structured
+  inputs stay OUT of the float `indication_assumptions` table), `last_calculated_input_hash STRING`
+  (stale-input guard: a scenario edited since its last calc can't be submitted).
+- **indication_results** +`input_snapshot_json STRING` (full validated inputs), `input_hash STRING`
+  (reproduce/verify), `rate_history_version STRING`, `premium_summary_json STRING` (method, total
+  EP/OLEP, overall factor, raw & on-level reported LR). Old rows without a snapshot read as legacy.

@@ -12,7 +12,7 @@
 # MAGIC Idempotent: fully rebuilds the book and baselines each run.
 
 # COMMAND ----------
-import sys, json, uuid
+import sys, json, uuid, hashlib
 from datetime import datetime, timezone
 
 dbutils.widgets.text("catalog", "lr_dev_aws_us_catalog")
@@ -85,16 +85,40 @@ for (lob, terr), rows in exp_by_seg.items():
                          reported_incurred=r["reported_incurred"], claim_count=r["claim_count"],
                          exposure=r["exposure"], rate_level_index=r["rate_level_index"],
                          ldf_to_ultimate=r["ldf_to_ultimate"]) for r in rows]
-    res = calc_segment(ey, rate_state[(lob, terr)]["current_rate_level"], PROSPECTIVE, a)
+    rst = rate_state[(lob, terr)]
+    # Baseline stays on the legacy annual-index method (preserves the demo's headline
+    # number); the earning-aware parallelogram method is shown as a scenario in-app.
+    premium_settings = {
+        "method": "legacy_annual_index",
+        "reference_rate_date": rst["reference_rate_date"].isoformat(),
+        "baseline_effective_date": rst["baseline_effective_date"].isoformat(),
+        "baseline_rate_index": rst["baseline_rate_index"],
+        "policy_term_days": rst["policy_term_days"],
+        "rate_history_version": VERSION,
+        "event_overrides": [],
+    }
+    res = calc_segment(ey, rst["current_rate_level"], PROSPECTIVE, a, on_level_method="legacy_annual_index")
     sid = f"baseline-{lob}-{terr}-{PROSPECTIVE}"
     rid = str(uuid.uuid4())
+    snapshot = {"assumptions": a, "experience_version": VERSION, "rate_history_version": VERSION,
+                "premium_settings": premium_settings, "prospective_period": PROSPECTIVE,
+                "accident_years": [r["accident_year"] for r in rows]}
+    input_hash = hashlib.sha256(json.dumps(snapshot, sort_keys=True, default=str).encode()).hexdigest()
+    premium_summary = {"method": "legacy_annual_index",
+                       "total_earned_premium": round(res.total_earned_premium, 2),
+                       "total_on_level_earned_premium": round(res.on_level_earned_premium, 2),
+                       "overall_on_level_factor": round(res.overall_on_level_factor, 6),
+                       "raw_reported_loss_ratio": round(res.raw_reported_loss_ratio, 6),
+                       "on_level_reported_loss_ratio": round(res.on_level_reported_loss_ratio, 6)}
     scenarios.append(dict(scenario_id=sid, scenario_name="Approved Baseline", lob_code=lob,
                           territory_code=terr, indication_period=PROSPECTIVE, status="APPROVED",
                           is_baseline=True, owner=USER, reviewer=USER, created_by=USER,
                           created_at=NOW, updated_at=NOW, submitted_at=NOW, reviewed_at=NOW,
                           approved_at=NOW, selected_rate_change=round(res.indicated_rate_change, 6),
                           selection_comment="Baseline seeded at build.", comments="Approved baseline basis.",
-                          cloned_from=None, experience_version=VERSION))
+                          cloned_from=None, experience_version=VERSION,
+                          premium_settings_json=json.dumps(premium_settings),
+                          last_calculated_input_hash=input_hash))
     for name, val in a.items():
         assumptions.append(dict(scenario_id=sid, assumption_name=name, assumption_value=float(val),
                                 baseline_value=float(val), unit=ASSUMPTION_META.get(name, {}).get("unit", ""),
@@ -109,7 +133,9 @@ for (lob, terr), rows in exp_by_seg.items():
                         on_level_earned_premium=round(res.on_level_earned_premium, 2),
                         projected_ultimate_loss=round(res.projected_ultimate_loss, 2),
                         decomposition_json="[]", detail_json=json.dumps(res.detail_years),
-                        calculated_by=USER, calculation_timestamp=NOW))
+                        calculated_by=USER, calculation_timestamp=NOW,
+                        input_snapshot_json=json.dumps(snapshot, default=str), input_hash=input_hash,
+                        rate_history_version=VERSION, premium_summary_json=json.dumps(premium_summary)))
     for act, frm, to in [("CREATE", None, "DRAFT"), ("CALCULATE", "DRAFT", "DRAFT"),
                           ("APPROVE", "DRAFT", "APPROVED")]:
         audit.append(dict(event_id=str(uuid.uuid4()), log_ts=NOW, scenario_id=sid, action=act,

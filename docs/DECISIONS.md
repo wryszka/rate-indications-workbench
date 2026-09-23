@@ -64,7 +64,48 @@ Verdict was SHIP WITH ROADMAPPED GAPS (7/8; incumbent champion HOLD). Applied:
 - Indication **confidence range**; ULAE/ALAE split; large-loss/cat as fitted models; discounted
   basis; portfolio-level what-if; app.yaml `valueFrom` resource bindings; Liquid Clustering.
 
+## 2026-09-23 — On-level earned premium (Phase 1A + 1B)
+
+Added dated/earning-aware on-levelling as an extension of the existing engine (calc_version
+1.1.0). Answers "what would this historical earned premium have been at the reference rate
+level?" — a standard actuarial adjustment, not a forecast and not loss dev/trend/mix.
+- **Two methods.** `legacy_annual_index` (the existing simplification — reference index ÷ the
+  year's annual index; what a spreadsheet does) and `parallelogram_fixed_term` (earning-aware:
+  average EARNED index derived analytically from dated rate changes under uniform writing +
+  straight-line earning of a 365-day term). Math in `src/app/on_level.py` (stdlib), validated
+  against the brief's worked examples to 1e-10 / a penny (`scripts/test_on_level.py`).
+- **The demo spine is preserved (user decision).** The seeded **approved baseline stays on
+  legacy annual-index**, so GL/Germany holds at **+6.6%** through Steps 1–2 and the Act-1
+  spreadsheet still ties. The parallelogram method is the **Step-3 upgrade**: switching it on
+  moves GL/DE to **+5.4%** (−1.15 pts) — the "what the platform gives you that Excel couldn't"
+  beat. Re-baselining the whole book on parallelogram was rejected (would break the spine).
+- **Raw vs on-level reported LR** surfaced (same losses, different denominator) — distinct from
+  the trended `projected_loss_ratio`. The engine's `detail_years.loss_ratio` keeps its contract
+  (trended-ultimate / OLEP); new `raw_reported_lr` / `on_level_reported_lr` fields added, not
+  relabelled. `experience_loss_ratio` documented as the *loaded* LR (not the credibility Z).
+- **On-level factors are pluggable** into `calc_segment` (legacy = None → inline, bit-identical
+  to before; parallelogram = per-year factors). Only the premium denominator changes; loss
+  develop/trend/loads/credibility are untouched. Invalid permissible LR now *rejects* for new
+  calcs (no silent floor).
+- **Governance / reproducibility.** Every recorded result carries `input_snapshot_json` +
+  `input_hash` + `rate_history_version` + `premium_summary_json`, so it reproduces even after the
+  source tables are regenerated; a `last_calculated_input_hash` on the scenario is the **stale-
+  input guard** (a scenario edited since its last calculation cannot be submitted — 409). The
+  result's `selected_rate_change` is no longer auto-set to the indication (selected ≠ indicated).
+- **Migration is additive + idempotent** (`ALTER ADD COLUMNS`, introspected — never drops or
+  rewrites rows); existing saved scenarios/results survive, old rows read legacy. `Reset demo`
+  stays the one explicit wipe.
+- **Data**: synthetic rate history seeded with Jan-1 effective dates (`date_source=
+  assumed_from_year`), a baseline index 1.0 from 2018-01-01 (covers the earliest earning cohort),
+  reference date 2026-01-01, 365-day term. Losses unchanged (still annual-index-constructed) so
+  the legacy baseline is stable and the method comparison is honest.
+- **Deferred (labelled): Phase 2** monthly/quarterly + term mixtures + supplied-average-index;
+  **Phase 3** policy-level rerating. And still: calc→governed UC function/job (unchanged — the
+  app still computes in-process; NOT claimed migrated).
+
 ### Gotchas hit
+- `ALTER TABLE … ADD COLUMNS IF NOT EXISTS` is not accepted here — introspect existing columns
+  and add only the missing ones.
 - A Databricks notebook cell that **starts with `# MAGIC %md`** is treated as an all-
   markdown cell — `spark.sql(...)` lines below it in the same cell silently don't run.
   Keep section headers as plain `# ---- x ----` comments in code cells.

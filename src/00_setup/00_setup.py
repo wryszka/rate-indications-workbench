@@ -105,5 +105,39 @@ spark.sql(f"""CREATE TABLE IF NOT EXISTS {FQ}.approval_role (
 ) COMMENT 'Magnitude-routed approval: which role must sign off an indicated change of a given size.'""")
 
 # COMMAND ----------
+# ---- On-level premium migration (additive, idempotent — never drops or rewrites rows) ----
+# Adds nullable columns for dated/earning-aware on-levelling. Existing saved
+# scenarios and results are preserved; old rows read as NULL (legacy) and stay valid.
+_migrations = {
+    "indication_experience": [
+        ("loss_valuation_date", "DATE"), ("premium_basis", "STRING"), ("loss_basis", "STRING"),
+    ],
+    "rate_change_history": [
+        ("rate_history_version", "STRING"), ("event_id", "STRING"), ("effective_date", "DATE"),
+        ("status", "STRING"), ("date_source", "STRING"),
+    ],
+    "segment_rate_state": [
+        ("rate_history_version", "STRING"), ("baseline_effective_date", "DATE"),
+        ("baseline_rate_index", "DOUBLE"), ("history_complete_from", "DATE"),
+        ("reference_rate_date", "DATE"), ("policy_term_days", "INT"), ("on_level_method", "STRING"),
+    ],
+    "indication_scenarios": [
+        ("premium_settings_json", "STRING"), ("last_calculated_input_hash", "STRING"),
+    ],
+    "indication_results": [
+        ("input_snapshot_json", "STRING"), ("input_hash", "STRING"),
+        ("rate_history_version", "STRING"), ("premium_summary_json", "STRING"),
+    ],
+}
+for tbl, cols in _migrations.items():
+    existing = {f.name for f in spark.table(f"{CATALOG}.{SCHEMA}.{tbl}").schema.fields}
+    missing = [(c, t) for c, t in cols if c not in existing]
+    if missing:
+        add = ", ".join(f"{c} {t}" for c, t in missing)
+        spark.sql(f"ALTER TABLE {FQ}.{tbl} ADD COLUMNS ({add})")
+        print(f"  {tbl}: added {[c for c, _ in missing]}")
+print("On-level migration applied (additive).")
+
+# COMMAND ----------
 print("Setup complete. Tables:")
 display(spark.sql(f"SHOW TABLES IN {FQ}"))

@@ -86,6 +86,32 @@ assumes rates hold from the last experience year to the prospective period. Mid-
 selective adjustments and filed-vs-earned reconciliation are the roadmap. Any interim rate
 moves before filing would shift the indication further.
 
+**Q (Actuary): What is on-level premium, and does it change with the new method?** On-level
+premium restates historic earned premium to one reference rate level so premium and losses are
+comparable — "what would this business have earned at today's rates?". V1 has two methods: the
+**legacy annual-index** simplification (reference index ÷ the year's index — what a spreadsheet
+does) and the **earning-aware parallelogram** method, which derives the *average earned* index
+from the dated rate changes under uniform writing + straight-line earning of a 365-day term. On
+GL/Germany the parallelogram method moves the baseline indication from **+6.6% to +5.4%** —
+because the annual approximation over-states the rate need by ignoring that a mid-period rate
+change only earns gradually. Same losses; only the premium denominator changes.
+
+**Q (Incumbent champion): Does the on-level factor sneak in trend or mix?** No. It adjusts *only*
+for rate level. Loss development, trend, large-loss/cat loads, credibility and mix are separate,
+downstream, and unchanged — the raw and on-level reported loss ratios use exactly the same losses,
+scope and valuation date. It's a parallelogram-style aggregate factor under stated assumptions
+(uniform writing, fixed term), not policy-level rerating.
+
+**Q (Actuary): Raw vs on-level loss ratio — which is which?** The **raw** reported LR is reported
+incurred ÷ historical earned premium; the **on-level** reported LR is the same losses ÷ on-level
+premium. They're shown side by side, and both are distinct from the *trended* projected loss ratio
+that drives the indication (that one also develops and trends the losses).
+
+**Q (SA): Can I reproduce a saved on-level result after the data is regenerated?** Yes — each
+recorded result stores a full input snapshot + hash + the rate-history version, so it reproduces
+even if the source tables are rebuilt. And a scenario edited since its last calculation is blocked
+from submission until you recalculate (stale-input guard).
+
 **Q (Actuary/Compliance): Is the approval actually enforced or just displayed?** Enforced
 server-side. The size of the indicated change determines the required sign-off role
 (Pricing Manager < 5%, Chief Pricing Actuary 5–10%, Pricing Committee > 10%); the review

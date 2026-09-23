@@ -3,14 +3,18 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+import csv
+import io
+
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 import config
 import store
 import agent_client
 import genie
+import on_level
 
 log = logging.getLogger("rate_indications")
 app = FastAPI(title="Rate Indications Workbench")
@@ -57,13 +61,17 @@ async def get_segment(lob: str, territory: str, period: int = 2027):
     bsid = await store.baseline_scenario_id(lob, territory, period)
     detail = await store.scenario_detail(bsid)
     scns = await store.scenarios(lob, territory, period)
-    return ok({"baseline": detail, "scenarios": scns})
+    rate_context = await store.segment_rate_context(lob, territory)
+    return ok({"baseline": detail, "scenarios": scns, "rate_context": rate_context})
 
 
 @app.post("/api/preview")
 async def post_preview(body: dict):
     try:
-        return ok(await store.run_preview(body["lob"], body["territory"], int(body["period"]), body["assumptions"]))
+        return ok(await store.run_preview(body["lob"], body["territory"], int(body["period"]),
+                                          body["assumptions"], body.get("premium_settings")))
+    except on_level.OnLevelError as e:
+        return err(str(e))                # actionable, safe validation message
     except Exception as e:  # noqa: BLE001
         return fail("preview", e)
 
@@ -95,6 +103,15 @@ async def put_assumptions(sid: str, body: dict):
     return ok({"saved": True})
 
 
+@app.put("/api/scenarios/{sid}/premium-settings")
+async def put_premium_settings(sid: str, body: dict):
+    try:
+        await store.save_premium_settings(sid, body["premium_settings"])
+        return ok({"saved": True})
+    except Exception as e:  # noqa: BLE001
+        return fail("save premium settings", e)
+
+
 @app.post("/api/scenarios/{sid}/calculate")
 async def calculate(sid: str):
     try:
@@ -114,8 +131,13 @@ async def select_rate(sid: str, body: dict):
 
 @app.post("/api/scenarios/{sid}/submit")
 async def submit(sid: str):
-    await store.set_status(sid, "submit", note="submitted for review")
-    return ok({"status": "SUBMITTED"})
+    try:
+        await store.set_status(sid, "submit", note="submitted for review")
+        return ok({"status": "SUBMITTED"})
+    except store.StaleInput as e:
+        return JSONResponse({"error": str(e), "stale": True}, status_code=409)
+    except Exception as e:  # noqa: BLE001
+        return fail("submit", e)
 
 
 @app.post("/api/scenarios/{sid}/review")
@@ -141,6 +163,38 @@ async def compare(ids: str):
 @app.get("/api/audit")
 async def audit(scenario_id: str):
     return ok({"events": await store.audit_trail(scenario_id)})
+
+
+def _csv_safe(v):
+    s = "" if v is None else str(v)
+    return ("'" + s) if s[:1] in ("=", "+", "-", "@") else s   # neutralise spreadsheet formulas
+
+
+@app.get("/api/scenarios/{sid}/export")
+async def export_result(sid: str):
+    """CSV of the scenario's latest recorded result — per-year on-level detail + headline,
+    with the same numerators/currency/settings shown in the UI."""
+    d = await store.scenario_detail(sid)
+    if not d or not d.get("result"):
+        return err("no recorded result to export", 404)
+    r, sc = d["result"], d["scenario"]
+    ps = r.get("premium_summary") or {}
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["scenario", sc.get("scenario_name"), "segment", f"{sc.get('lob_code')}/{sc.get('territory_code')}"])
+    w.writerow(["method", ps.get("method"), "currency", ps.get("currency"), "calc_version", r.get("calc_version"),
+                "experience_version", r.get("experience_version")])
+    w.writerow(["indicated_rate_change", r.get("indicated_rate_change"), "on_level_reported_LR",
+                ps.get("on_level_reported_loss_ratio"), "raw_reported_LR", ps.get("raw_reported_loss_ratio")])
+    w.writerow([])
+    cols = ["accident_year", "earned_premium", "on_level_factor", "on_level_earned_premium", "reported_incurred",
+            "raw_reported_lr", "on_level_reported_lr", "average_earned_index", "reference_index",
+            "effective_ldf", "ultimate_loss", "trend_factor", "trended_ultimate"]
+    w.writerow(cols)
+    for dy in (r.get("detail_years") or []):
+        w.writerow([_csv_safe(dy.get(c)) for c in cols])
+    return Response(content=buf.getvalue(), media_type="text/csv",
+                    headers={"Content-Disposition": f'attachment; filename="{sid}.csv"'})
 
 
 @app.get("/api/ai-mode")
@@ -209,9 +263,9 @@ LEARN_CARDS = [
     {"n": 1, "group": "Trust the experience", "activity": "I start from the book's earned premium and reported losses by segment and accident year.",
      "how": "A governed Unity Catalog table (indication_experience), ACORD-shaped and mirroring the group loss triangle.",
      "links": [{"label": "indication_experience", "kind": "table"}]},
-    {"n": 2, "group": "Trust the experience", "activity": "I restate old premium at today's rate level so premium and losses are comparable.",
-     "how": "On-levelling uses the taken rate-change history (rate_change_history) as a cumulative index.",
-     "links": [{"label": "rate_change_history", "kind": "table"}]},
+    {"n": 2, "group": "Trust the experience", "activity": "I restate old premium at today's rate level so premium and losses are comparable — and I can see the raw vs on-level loss ratio side by side.",
+     "how": "On-levelling from the dated rate-change history: a crude annual-index (the spreadsheet way) or the earning-aware parallelogram method that derives the average EARNED index from effective dates. Same losses, two premium denominators.",
+     "links": [{"label": "rate_change_history", "kind": "table"}, {"label": "segment_rate_state", "kind": "table"}]},
     {"n": 3, "group": "Work the indication", "activity": "I develop reported losses to ultimate and trend them to the prospective period.",
      "how": "Deterministic loss-ratio method (indication_engine, calc_version pinned); the loss triangle backs the development factor.",
      "links": [{"label": "indication_loss_triangle", "kind": "table"}]},

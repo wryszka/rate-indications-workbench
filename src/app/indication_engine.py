@@ -38,7 +38,9 @@ from dataclasses import dataclass, field
 from typing import Any
 
 # Bump when the arithmetic changes; persisted with every result for audit.
-CALC_VERSION = "1.0.0"
+# 1.1.0 — pluggable on-level premium factors (earning-aware parallelogram alongside
+#         the legacy annual-index method); raw vs on-level reported LRs surfaced.
+CALC_VERSION = "1.1.0"
 
 # The eleven assumptions the actuary can set. Order matters: the decomposition
 # walks them in this sequence, flipping each from baseline to scenario in turn.
@@ -87,14 +89,21 @@ class ExperienceYear:
 @dataclass
 class SegmentResult:
     indicated_rate_change: float
-    projected_loss_ratio: float
+    projected_loss_ratio: float    # trended, loaded, credibility-weighted (the indication denominator input)
     permissible_loss_ratio: float
-    experience_loss_ratio: float   # credibility-weighted, loaded
+    experience_loss_ratio: float   # loaded experience LR (despite the name — NOT the credibility Z)
     current_rate_level: float
     on_level_earned_premium: float
     projected_ultimate_loss: float
     required_premium: float
     detail_years: list[dict[str, Any]] = field(default_factory=list)
+    # premium-basis measures (Phase 1A): reported (undeveloped) LRs, same losses,
+    # different denominator. Distinct from the trended projected_loss_ratio above.
+    total_earned_premium: float = 0.0
+    raw_reported_loss_ratio: float = 0.0        # reported / historical EP
+    on_level_reported_loss_ratio: float = 0.0   # reported / on-level EP
+    overall_on_level_factor: float = 1.0        # total OLEP / total EP
+    on_level_method: str = "legacy_annual_index"
 
 
 def permissible_loss_ratio(a: dict[str, float]) -> float:
@@ -104,8 +113,12 @@ def permissible_loss_ratio(a: dict[str, float]) -> float:
         a["expense_ratio"] + a["commission_ratio"]
         + a["reinsurance_load"] + a["profit_provision"]
     )
-    # Guard against a nonsensical (>=100%) provision set.
-    return max(1e-6, 1.0 - provisions)
+    perm = 1.0 - provisions
+    # Reject a nonsensical (>=100%) provision set for new calculations rather than
+    # silently flooring to a tiny positive number.
+    if perm <= 0:
+        raise ValueError("provisions (expense+commission+reinsurance+profit) must be < 100%")
+    return perm
 
 
 def _effective_ldf(base_ldf: float, latest_base_ldf: float, selected_ldf: float) -> float:
@@ -125,8 +138,16 @@ def calc_segment(
     current_rate_level: float,
     prospective_period: int,
     assumptions: dict[str, float],
+    on_level_factors: dict[int, float] | None = None,
+    on_level_method: str = "legacy_annual_index",
 ) -> SegmentResult:
-    """Run the loss-ratio indication for one segment. Pure arithmetic."""
+    """Run the loss-ratio indication for one segment. Pure arithmetic.
+
+    On-level premium (step 2) uses `on_level_factors[accident_year]` when supplied
+    (the earning-aware parallelogram factor computed in on_level.py); otherwise it
+    falls back to the legacy annual-index factor (current_rate_level / rate_index),
+    which preserves the original behaviour exactly. Only the premium denominator
+    changes between methods — losses (develop/trend/loads/credibility) are identical."""
     a = assumptions
     n_years = int(round(a["experience_period_years"]))
     # Most-recent n_years of experience.
@@ -139,11 +160,17 @@ def calc_segment(
 
     sum_olep = 0.0
     sum_trended_ult = 0.0
+    sum_ep = 0.0
+    sum_reported = 0.0
     detail: list[dict[str, Any]] = []
 
     for e in exp:
-        # (2) on-level the premium to the current rate level
-        olep = e.earned_premium * (current_rate_level / e.rate_level_index) if e.rate_level_index else e.earned_premium
+        # (2) on-level the premium — supplied factor (parallelogram) or legacy annual index
+        if on_level_factors is not None and e.accident_year in on_level_factors:
+            olf = on_level_factors[e.accident_year]
+        else:
+            olf = (current_rate_level / e.rate_level_index) if e.rate_level_index else 1.0
+        olep = e.earned_premium * olf
         # (3) develop reported losses to ultimate
         eff_ldf = _effective_ldf(e.ldf_to_ultimate, latest_base_ldf, sel_ldf)
         ultimate = e.reported_incurred * eff_ldf
@@ -154,24 +181,31 @@ def calc_segment(
 
         sum_olep += olep
         sum_trended_ult += trended_ult
+        sum_ep += e.earned_premium
+        sum_reported += e.reported_incurred
         detail.append({
             "accident_year": e.accident_year,
             "earned_premium": round(e.earned_premium, 2),
+            "on_level_factor": round(olf, 6),
             "on_level_earned_premium": round(olep, 2),
             "reported_incurred": round(e.reported_incurred, 2),
+            # reported (undeveloped) LRs — same losses, two denominators; null if no premium
+            "raw_reported_lr": round(e.reported_incurred / e.earned_premium, 4) if e.earned_premium else None,
+            "on_level_reported_lr": round(e.reported_incurred / olep, 4) if olep else None,
             "effective_ldf": round(eff_ldf, 4),
             "ultimate_loss": round(ultimate, 2),
             "trend_years": delta,
             "trend_factor": round(trend_factor, 4),
             "trended_ultimate": round(trended_ult, 2),
+            # NOTE: this is the TRENDED-ULTIMATE / OLEP ratio (kept for contract), not the raw reported LR
             "loss_ratio": round(trended_ult / olep, 4) if olep else None,
         })
 
-    # raw experience loss ratio (on-level, developed, trended). A zero on-level
-    # premium means the segment has no usable experience — fail loudly rather
-    # than record a misleading 0% indication.
+    # A zero on-level premium means the segment has no usable experience — fail
+    # loudly rather than record a misleading 0% indication.
     if sum_olep <= 0:
         raise ValueError("no on-level earned premium in the selected experience period")
+    # experience loss ratio (on-level, developed, trended)
     raw_lr = sum_trended_ult / sum_olep
     # (5) loads: large-loss multiplicative on losses; cat additive as % of premium
     loaded_lr = raw_lr * (1.0 + a["large_loss_load"]) + a["cat_load"]
@@ -195,6 +229,11 @@ def calc_segment(
         projected_ultimate_loss=sum_trended_ult,
         required_premium=required_premium,
         detail_years=detail,
+        total_earned_premium=sum_ep,
+        raw_reported_loss_ratio=(sum_reported / sum_ep) if sum_ep else 0.0,
+        on_level_reported_loss_ratio=(sum_reported / sum_olep),
+        overall_on_level_factor=(sum_olep / sum_ep) if sum_ep else 1.0,
+        on_level_method=on_level_method,
     )
 
 
@@ -204,23 +243,44 @@ def decompose(
     prospective_period: int,
     baseline: dict[str, float],
     scenario: dict[str, float],
+    baseline_factors: dict[int, float] | None = None,
+    scenario_factors: dict[int, float] | None = None,
+    premium_basis_label: str | None = None,
 ) -> list[dict[str, Any]]:
     """Sequential (marginal) attribution of the move in indicated rate change
-    from the baseline assumptions to the scenario assumptions.
+    from baseline to scenario. Contributions sum EXACTLY to the total move.
 
-    We start at the baseline indication, then flip one assumption at a time to
-    its scenario value in ASSUMPTION_ORDER, recording the change each flip
-    produces. Because it is sequential, the contributions sum EXACTLY to the
-    total move (no unexplained residual), which is what makes the on-screen
-    waterfall honest."""
+    Order: an optional grouped **Premium rate basis** step first (holding loss
+    assumptions at baseline, switching the on-level factors baseline→scenario —
+    e.g. a method/date/history change), then each loss assumption in
+    ASSUMPTION_ORDER (all evaluated at the scenario's premium factors)."""
     steps: list[dict[str, Any]] = []
     working = dict(baseline)
-    prev = calc_segment(experience, current_rate_level, prospective_period, working).indicated_rate_change
+
+    def ind(assumptions, factors):
+        return calc_segment(experience, current_rate_level, prospective_period,
+                            assumptions, on_level_factors=factors).indicated_rate_change
+
+    prev = ind(working, baseline_factors)
+    # Step 0 — premium rate basis (on-level factors), loss assumptions held at baseline.
+    if scenario_factors is not None and scenario_factors != baseline_factors:
+        cur = ind(working, scenario_factors)
+        contribution = cur - prev
+        if abs(contribution) > 1e-9:
+            steps.append({
+                "assumption": "premium_basis",
+                "label": premium_basis_label or "Premium rate basis",
+                "from": None, "to": None,
+                "group": "Premium",
+                "contribution_pts": round(contribution * 100, 2),
+            })
+        prev = cur
+    factors = scenario_factors if scenario_factors is not None else baseline_factors
     for name in ASSUMPTION_ORDER:
         if name not in scenario or scenario[name] == working.get(name):
             continue
         working[name] = scenario[name]
-        cur = calc_segment(experience, current_rate_level, prospective_period, working).indicated_rate_change
+        cur = ind(working, factors)
         contribution = cur - prev
         if abs(contribution) > 1e-9:
             steps.append({
@@ -228,6 +288,7 @@ def decompose(
                 "label": ASSUMPTION_META.get(name, {}).get("label", name),
                 "from": baseline.get(name),
                 "to": scenario.get(name),
+                "group": ASSUMPTION_META.get(name, {}).get("group", ""),
                 "contribution_pts": round(contribution * 100, 2),
             })
         prev = cur
