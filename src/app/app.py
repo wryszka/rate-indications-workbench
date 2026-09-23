@@ -16,6 +16,7 @@ import agent_client
 import agents
 import genie
 import on_level
+import platform_agent
 
 
 def _f(x):
@@ -286,8 +287,17 @@ async def agent_interrogate(body: dict):
                    "rate_events": rc.get("events"),
                    "detail_years": prev["result"].get("detail_years"),
                    "premium_summary": prev.get("premium_summary")}
-        return ok(await agents.run("interrogate", payload, body.get("mode", config.ai_mode()),
-                                   question=body.get("question", "")))
+        mode = body.get("mode", config.ai_mode())
+        question = body.get("question", "")
+        # Platform-native path (v2.3): call the served Agent-Framework agent (UC-function
+        # tools) first in live mode; fall back to the in-process agent if unavailable.
+        if mode == "live":
+            try:
+                r = await platform_agent.ask(f"For {lob} / {terr} {period}: {question}")
+                return ok(r)
+            except Exception:  # noqa: BLE001 — served endpoint not ready / erroring → fall back
+                pass
+        return ok(await agents.run("interrogate", payload, mode, question=question))
     except Exception as e:  # noqa: BLE001
         return fail("agent interrogate", e)
 
