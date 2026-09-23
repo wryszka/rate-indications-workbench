@@ -51,13 +51,14 @@ def _invoke_sync(payload: dict[str, Any]) -> dict[str, Any]:
             f"Baseline indicated: {payload.get('baseline_indicated')}\n"
             f"Decomposition (assumption -> point impact): {payload.get('decomposition')}"
         )
+        from databricks.sdk.service.serving import ChatMessage, ChatMessageRole
         resp = w.serving_endpoints.query(
             name=LLM_ENDPOINT,
             messages=[
-                {"role": "system", "content": SYSTEM},
-                {"role": "user", "content": user},
+                ChatMessage(role=ChatMessageRole.SYSTEM, content=SYSTEM),
+                ChatMessage(role=ChatMessageRole.USER, content=user),
             ],
-            max_tokens=350, temperature=0.2,
+            max_tokens=350,
         )
         text = resp.choices[0].message.content
         return {"ok": True, "answer": text, "source": "live", "model": LLM_ENDPOINT}

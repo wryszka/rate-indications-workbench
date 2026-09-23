@@ -13,8 +13,13 @@ from fastapi.staticfiles import StaticFiles
 import config
 import store
 import agent_client
+import agents
 import genie
 import on_level
+
+
+def _f(x):
+    return float(x) if x is not None else None
 
 log = logging.getLogger("rate_indications")
 app = FastAPI(title="Rate Indications Workbench")
@@ -231,6 +236,80 @@ async def genie_ask(body: dict):
         return fail("genie", e)
 
 
+@app.post("/api/agent/review")
+async def agent_review(body: dict):
+    """Advise-only pre-submission peer review of a saved scenario."""
+    try:
+        d = await store.scenario_detail(body["scenario_id"])
+        sc, res = d.get("scenario", {}), d.get("result") or {}
+        payload = {"segment": f"{sc.get('lob_code')} / {sc.get('territory_code')}",
+                   "period": sc.get("indication_period"), "assumptions": d.get("assumptions"),
+                   "baseline": d.get("baseline"), "result": res,
+                   "selected_rate_change": _f(sc.get("selected_rate_change")),
+                   "on_level_method": (res.get("premium_summary") or {}).get("method")}
+        return ok(await agents.run("review", payload, body.get("mode", config.ai_mode())))
+    except Exception as e:  # noqa: BLE001
+        return fail("agent review", e)
+
+
+@app.post("/api/agent/recommend")
+async def agent_recommend(body: dict):
+    """Advise-only: propose a starting assumption set (a draft the actuary edits)."""
+    try:
+        bsid = await store.baseline_scenario_id(body["lob"], body["territory"], int(body["period"]))
+        d = await store.scenario_detail(bsid)
+        det_years = (d.get("result") or {}).get("detail_years") or []
+        payload = {"segment": f"{body['lob']} / {body['territory']}",
+                   "experience": [{"accident_year": y.get("accident_year"), "earned_premium": y.get("earned_premium"),
+                                   "reported_incurred": y.get("reported_incurred"), "raw_reported_lr": y.get("raw_reported_lr")}
+                                  for y in det_years],
+                   "baseline_assumptions": d.get("assumptions"),
+                   "assumption_names": d.get("assumption_order")}
+        return ok(await agents.run("recommend", payload, body.get("mode", config.ai_mode())))
+    except Exception as e:  # noqa: BLE001
+        return fail("agent recommend", e)
+
+
+@app.post("/api/agent/interrogate")
+async def agent_interrogate(body: dict):
+    """Advise-only Q&A over the rate history + earning-aware on-level detail."""
+    try:
+        lob, terr, period = body["lob"], body["territory"], int(body["period"])
+        rc = await store.segment_rate_context(lob, terr)
+        bsid = await store.baseline_scenario_id(lob, terr, period)
+        _, base_assum = await store.assumptions_for(bsid)
+        settings = await store.default_premium_settings(lob, terr)
+        settings["method"] = "parallelogram_fixed_term"
+        prev = await store.run_preview(lob, terr, period, base_assum, settings)
+        payload = {"segment": f"{lob} / {terr}", "method": "parallelogram_fixed_term",
+                   "reference_rate_date": rc.get("reference_rate_date"),
+                   "rate_events": rc.get("events"),
+                   "detail_years": prev["result"].get("detail_years"),
+                   "premium_summary": prev.get("premium_summary")}
+        return ok(await agents.run("interrogate", payload, body.get("mode", config.ai_mode()),
+                                   question=body.get("question", "")))
+    except Exception as e:  # noqa: BLE001
+        return fail("agent interrogate", e)
+
+
+@app.post("/api/agent/committee-paper")
+async def agent_committee_paper(body: dict):
+    """Advise-only: draft a committee paper from a recorded result."""
+    try:
+        d = await store.scenario_detail(body["scenario_id"])
+        sc, res = d.get("scenario", {}), d.get("result") or {}
+        payload = {"segment": f"{sc.get('lob_code')} / {sc.get('territory_code')}",
+                   "period": sc.get("indication_period"), "result": res,
+                   "decomposition": res.get("decomposition"), "assumptions": d.get("assumptions"),
+                   "selected_rate_change": _f(sc.get("selected_rate_change")),
+                   "selection_comment": sc.get("selection_comment"),
+                   "calc_version": res.get("calc_version"), "experience_version": res.get("experience_version"),
+                   "on_level_method": (res.get("premium_summary") or {}).get("method")}
+        return ok(await agents.run("committee_paper", payload, body.get("mode", config.ai_mode())))
+    except Exception as e:  # noqa: BLE001
+        return fail("committee paper", e)
+
+
 @app.post("/api/explain")
 async def explain(body: dict):
     mode = body.get("mode", config.ai_mode())
@@ -259,31 +338,44 @@ async def learn():
     return ok({"cards": LEARN_CARDS})
 
 
+# Two use-case tracks. UC "On-level earned premium" is the fair-comparison restatement;
+# UC "Rate indication" is the full price-change workflow that consumes it. One engine, two lenses.
+_UC_ONLEVEL = "On-level earned premium"
+_UC_INDICATION = "Rate indication"
+
 LEARN_CARDS = [
-    {"n": 1, "group": "Trust the experience", "activity": "I start from the book's earned premium and reported losses by segment and accident year.",
+    # ---- Use case: On-level earned premium ----
+    {"use_case": _UC_ONLEVEL, "n": 1, "group": "What & why", "activity": "Historic premium was charged at historic prices, so I restate it to one reference price level before I judge rate adequacy.",
+     "how": "On-level factor = reference rate index / average earned index; applied once to historic earned premium. An analytical adjustment — it never bills customers or changes live prices.",
+     "links": [{"label": "segment_rate_state", "kind": "table"}]},
+    {"use_case": _UC_ONLEVEL, "n": 2, "group": "What & why", "activity": "I see the raw vs on-level reported loss ratio side by side — same claims, different premium denominator.",
+     "how": "Both ratios use identical losses/scope/valuation date; only the premium basis changes. Distinct from the trended projected loss ratio in the indication.",
+     "links": [{"label": "indication_experience", "kind": "table"}]},
+    {"use_case": _UC_ONLEVEL, "n": 3, "group": "The method", "activity": "I choose how to on-level: the crude annual-index (the spreadsheet way) or the earning-aware method from actual rate-change dates.",
+     "how": "The parallelogram method derives the average EARNED index analytically — a mid-year change only earns through the book gradually. Legacy stays available and labelled a simplification.",
+     "links": [{"label": "rate_change_history", "kind": "table"}]},
+    {"use_case": _UC_ONLEVEL, "n": 4, "group": "The method", "activity": "I can test a historic rate change's size or effective date as a scenario-local what-if.",
+     "how": "Edits are scenario-local overrides — they never mutate the master rate history or the approved baseline. Dates are synthetic (assumed Jan 1); needs coverage back to the earliest earning cohort.",
+     "links": [{"label": "rate_change_history", "kind": "table"}]},
+    {"use_case": _UC_ONLEVEL, "n": 5, "group": "Governed", "activity": "Every saved on-level result reproduces later, exactly.",
+     "how": "The result stores the full input snapshot + hash + rate-history version + premium summary; a scenario edited since its last calc can't be submitted until recalculated.",
+     "links": [{"label": "indication_results", "kind": "table"}]},
+    # ---- Use case: Rate indication ----
+    {"use_case": _UC_INDICATION, "n": 1, "group": "Trust the experience", "activity": "I start from the book's earned premium and reported losses by segment and accident year.",
      "how": "A governed Unity Catalog table (indication_experience), ACORD-shaped and mirroring the group loss triangle.",
      "links": [{"label": "indication_experience", "kind": "table"}]},
-    {"n": 2, "group": "Trust the experience", "activity": "I restate old premium at today's rate level so premium and losses are comparable — and I can see the raw vs on-level loss ratio side by side.",
-     "how": "On-levelling from the dated rate-change history: a crude annual-index (the spreadsheet way) or the earning-aware parallelogram method that derives the average EARNED index from effective dates. Same losses, two premium denominators.",
-     "links": [{"label": "rate_change_history", "kind": "table"}, {"label": "segment_rate_state", "kind": "table"}]},
-    {"n": 3, "group": "Work the indication", "activity": "I develop reported losses to ultimate and trend them to the prospective period.",
+    {"use_case": _UC_INDICATION, "n": 2, "group": "Work the indication", "activity": "I develop reported losses to ultimate and trend them to the prospective period.",
      "how": "Deterministic loss-ratio method (indication_engine, calc_version pinned); the loss triangle backs the development factor.",
      "links": [{"label": "indication_loss_triangle", "kind": "table"}]},
-    {"n": 4, "group": "Work the indication", "activity": "I set assumptions — trend, development, loads, expenses, profit — and see the indication move instantly.",
-     "how": "Every saved calculation is recorded to indication_results with its assumption vector, calc_version and experience_version.",
+    {"use_case": _UC_INDICATION, "n": 3, "group": "Work the indication", "activity": "I set assumptions — trend, development, loads, expenses, profit — and see the indication move instantly, and ask why.",
+     "how": "Every saved calculation is recorded to indication_results; a marginal decomposition attributes the move to each assumption (and to the premium basis) and sums exactly.",
      "links": [{"label": "indication_results", "kind": "table"}]},
-    {"n": 5, "group": "Work the indication", "activity": "I ask why it moved.",
-     "how": "A marginal decomposition attributes the change to each assumption; contributions sum exactly to the total move.",
-     "links": []},
-    {"n": 6, "group": "Compound the book", "activity": "I compare scenarios and pick a selected rate that may differ from the indication.",
+    {"use_case": _UC_INDICATION, "n": 4, "group": "Compound the book", "activity": "I compare scenarios and pick a selected rate that may differ from the indication.",
      "how": "Scenarios persist in indication_scenarios; selected-vs-indicated and commentary are captured per scenario.",
      "links": [{"label": "indication_scenarios", "kind": "table"}]},
-    {"n": 7, "group": "Compound the book", "activity": "I submit for review; a colleague approves by role depending on the size of the change.",
-     "how": "Draft -> Submitted -> Reviewed -> Approved, routed by approval_role; every step is an append-only audit event.",
+    {"use_case": _UC_INDICATION, "n": 5, "group": "Compound the book", "activity": "I submit for review; a colleague approves by role depending on the size of the change — and anyone can reproduce it.",
+     "how": "Draft -> Submitted -> Reviewed -> Approved, routed + enforced by approval_role; every step is an append-only audit event tying the number to method + input version + author.",
      "links": [{"label": "indication_audit_log", "kind": "table"}]},
-    {"n": 8, "group": "Compound the book", "activity": "Anyone can reproduce a number later.",
-     "how": "The result row carries the exact assumptions, calc_version, experience_version, author and timestamp.",
-     "links": [{"label": "indication_results", "kind": "table"}]},
 ]
 
 
