@@ -48,19 +48,17 @@ export function Waterfall({ steps }: { steps: Step[] }) {
       {steps.map(s => {
         const w = (Math.abs(s.contribution_pts) / max) * 100;
         const positive = s.contribution_pts >= 0;
+        const premium = s.group === 'Premium';   // the on-level / premium-basis step, distinct colour
+        const bar = premium ? 'hsl(var(--chart-4))' : positive ? 'hsl(var(--chart-2))' : 'hsl(var(--chart-1))';
         return (
           <div key={s.assumption} className="grid grid-cols-[9rem_1fr_5rem] items-center gap-3 text-sm">
-            <div className="truncate text-muted-foreground">{s.label}</div>
+            <div className="truncate text-muted-foreground" title={s.label}>
+              {premium && <span className="mr-1 align-middle text-[10px] font-bold uppercase text-muted-foreground/70">◆</span>}{s.label}
+            </div>
             <div className="relative h-4 rounded bg-muted">
               <div className="absolute top-0 h-4 w-px bg-border" style={{ left: '50%' }} />
-              <div
-                className="absolute top-0 h-4 rounded"
-                style={{
-                  left: positive ? '50%' : `${50 - w / 2}%`,
-                  width: `${w / 2}%`,
-                  background: positive ? 'hsl(var(--chart-2))' : 'hsl(var(--chart-1))',
-                }}
-              />
+              <div className="absolute top-0 h-4 rounded"
+                style={{ left: positive ? '50%' : `${50 - w / 2}%`, width: `${w / 2}%`, background: bar }} />
             </div>
             <div className={'text-right tnum font-medium ' + (positive ? 'text-success' : 'text-destructive')}>{pts(s.contribution_pts)}</div>
           </div>

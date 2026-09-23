@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { api, Scenario, ScenarioDetail } from '@/lib/api';
+import { api, ApiError, Scenario, ScenarioDetail } from '@/lib/api';
 import { useMeta, Spin, Explainer } from '@/components/common';
 import { pct, toDisplay, fromDisplay, unitSuffix } from '@/lib/format';
 import { Card, CardContent } from '@/components/ui/card';
@@ -90,6 +90,8 @@ function Compare({ cmp }: { cmp: { scenarios: ScenarioDetail[]; assumption_order
         <TableHeader><TableRow><TableHead>Metric</TableHead>{cols.map(c => <TableHead key={c.scenario.scenario_id} className="text-right">{c.scenario.scenario_name}</TableHead>)}</TableRow></TableHeader>
         <TableBody>
           <TableRow className="hover:bg-transparent"><TableCell colSpan={cols.length + 1} className="py-2 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">Result</TableCell></TableRow>
+          <TableRow className="hover:bg-transparent"><TableCell>On-level method</TableCell>{cols.map(c => <TableCell key={c.scenario.scenario_id} className="text-right text-xs text-muted-foreground">{c.premium_settings?.method === 'parallelogram_fixed_term' ? 'earning-aware' : 'annual-index'}</TableCell>)}</TableRow>
+          <TableRow className="hover:bg-transparent"><TableCell>On-level reported LR</TableCell>{cols.map(c => <TableCell key={c.scenario.scenario_id} className="text-right tnum">{c.result?.premium_summary ? pct(c.result.premium_summary.on_level_reported_loss_ratio, 1, false) : '—'}</TableCell>)}</TableRow>
           <TableRow className="hover:bg-transparent"><TableCell>Projected loss ratio</TableCell>{cols.map(c => <TableCell key={c.scenario.scenario_id} className="text-right tnum">{c.result ? pct(c.result.projected_loss_ratio, 1, false) : '—'}</TableCell>)}</TableRow>
           <TableRow className="hover:bg-transparent"><TableCell>Indicated rate change</TableCell>{cols.map(c => <TableCell key={c.scenario.scenario_id} className="text-right tnum font-bold">{c.result ? pct(c.result.indicated_rate_change) : '—'}</TableCell>)}</TableRow>
           <TableRow className="hover:bg-transparent"><TableCell>Selected rate change</TableCell>{cols.map(c => <TableCell key={c.scenario.scenario_id} className="text-right tnum">{c.scenario.selected_rate_change != null ? pct(c.scenario.selected_rate_change) : '—'}</TableCell>)}</TableRow>
@@ -116,14 +118,21 @@ function ScenarioEditor({ id, onClose, onChanged }: { id: string; onClose: () =>
   const [busy, setBusy] = useState('');
   const [sel, setSel] = useState('');
   const [comment, setComment] = useState('');
+  const [stale, setStale] = useState('');
   const load = () => api.scenario(id).then(v => { setD(v); setAssum({ ...v.assumptions }); setSel(v.scenario.selected_rate_change != null ? String((v.scenario.selected_rate_change * 100).toFixed(1)) : ''); });
   useEffect(() => { load(); }, [id]);
   if (!d) return <Card><CardContent className="p-6"><Spin /> Loading scenario…</CardContent></Card>;
 
   const editable = d.scenario.status === 'DRAFT' && !d.scenario.is_baseline;
-  const recalc = async () => { setBusy('calc'); await api.saveAssumptions(id, assum); await api.calculate(id); await load(); onChanged(); setBusy(''); };
+  const olMethod = d.premium_settings?.method === 'parallelogram_fixed_term' ? 'Earning-aware on-level' : 'Legacy annual-index';
+  const recalc = async () => { setBusy('calc'); await api.saveAssumptions(id, assum); await api.calculate(id); setStale(''); await load(); onChanged(); setBusy(''); };
   const saveSel = async () => { setBusy('sel'); await api.selectRate(id, fromDisplay(sel, 'pct'), comment); await load(); onChanged(); setBusy(''); };
-  const submit = async () => { setBusy('submit'); await api.submit(id); await load(); onChanged(); setBusy(''); };
+  const submit = async () => {
+    setBusy('submit'); setStale('');
+    try { await api.submit(id); await load(); onChanged(); }
+    catch (e) { setStale(e instanceof ApiError && e.body?.stale ? e.message : 'Submit failed.'); }
+    finally { setBusy(''); }
+  };
 
   return (
     <Card className="border-primary/30"><CardContent className="space-y-3 p-4">
@@ -131,10 +140,14 @@ function ScenarioEditor({ id, onClose, onChanged }: { id: string; onClose: () =>
         <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{d.scenario.scenario_name} — {d.scenario.lob_code} · {d.scenario.territory_code} · {d.scenario.indication_period}</div>
         <Button size="sm" variant="ghost" onClick={onClose}>Close</Button>
       </div>
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <Badge variant={STATUS_VARIANT[d.scenario.status] || 'secondary'}>{d.scenario.status}</Badge>
-        {d.result && <span className="text-sm text-muted-foreground">Indicated <span className="font-semibold text-foreground">{pct(d.result.indicated_rate_change)}</span> · projected LR {pct(d.result.projected_loss_ratio, 1, false)}</span>}
+        <Badge variant="outline">{olMethod}</Badge>
+        {d.result && <span className="text-sm text-muted-foreground">Indicated <span className="font-semibold text-foreground">{pct(d.result.indicated_rate_change)}</span> · projected LR {pct(d.result.projected_loss_ratio, 1, false)}
+          {d.result.premium_summary && <> · on-level reported LR {pct(d.result.premium_summary.on_level_reported_loss_ratio, 1, false)}</>}</span>}
+        {d.result && <a href={api.exportUrl(id)} className="ml-auto"><Button size="sm" variant="outline">Export CSV</Button></a>}
       </div>
+      {stale && <div className="flex items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning">⚠ {stale}{' '}— recalculate before submitting.</div>}
 
       <div className="grid gap-4 lg:grid-cols-2">
         <div>

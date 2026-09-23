@@ -125,7 +125,9 @@ function AuditTrail({ id }: { id: string }) {
       {detail?.result && (
         <div className="flex items-start gap-2 rounded-md border bg-muted/40 p-3 text-sm">
           <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-success" />
-          <span><span className="font-semibold text-success">Reproducible.</span> Recorded result: indicated <span className="font-semibold">{pct(detail.result.indicated_rate_change)}</span> · calc version <span className="font-semibold">{detail.result.calc_version}</span> · data version <span className="font-semibold">{detail.result.experience_version}</span> · by {detail.result.calculated_by}</span>
+          <span><span className="font-semibold text-success">Reproducible.</span> Recorded result: indicated <span className="font-semibold">{pct(detail.result.indicated_rate_change)}</span> · calc version <span className="font-semibold">{detail.result.calc_version}</span> · data version <span className="font-semibold">{detail.result.experience_version}</span>
+            {detail.premium_settings && <> · on-level <span className="font-semibold">{detail.premium_settings.method === 'parallelogram_fixed_term' ? 'earning-aware' : 'annual-index'}</span></>} · by {detail.result.calculated_by}</span>
+          <a href={api.exportUrl(id)} className="ml-auto shrink-0"><Button size="sm" variant="outline">Export CSV</Button></a>
         </div>
       )}
       <Table>
