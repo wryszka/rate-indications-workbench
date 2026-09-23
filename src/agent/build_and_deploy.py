@@ -7,6 +7,13 @@
 # MAGIC Submitted as a serverless job — `agents.deploy()` blocks ~15 min.
 
 # COMMAND ----------
+# Install only the extras (mlflow/pydantic/databricks-sdk are preinstalled on serverless).
+# In-notebook %pip resolves incrementally against the base — avoids the env-spec
+# ResolutionTooDeep. langgraph pinned to narrow the search.
+# MAGIC %pip install -q databricks-langchain "langgraph==0.3.4" databricks-agents
+# MAGIC %restart_python
+
+# COMMAND ----------
 import json, os
 import mlflow
 from mlflow.models.resources import DatabricksServingEndpoint, DatabricksFunction
