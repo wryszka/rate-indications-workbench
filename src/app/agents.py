@@ -115,11 +115,13 @@ def _invoke_sync(persona: str, payload: dict[str, Any], question: str | None) ->
 
 
 def _parse_suggested(text: str) -> dict[str, float]:
-    """Best-effort parse of the trailing {"suggested": {...}} JSON; empty on failure."""
+    """Best-effort parse of the {"suggested": {...}} JSON; empty on failure. Uses
+    raw_decode from the object start so trailing model prose can't break it."""
     try:
         i = text.rindex("{\"suggested\"")
-        obj = json.loads(text[i:text.rindex("}") + 1])
-        return {k: float(v) for k, v in (obj.get("suggested") or {}).items()}
+        obj, _end = json.JSONDecoder().raw_decode(text[i:])
+        return {k: float(v) for k, v in (obj.get("suggested") or {}).items()
+                if isinstance(v, (int, float))}
     except Exception:  # noqa: BLE001
         return {}
 

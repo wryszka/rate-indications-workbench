@@ -112,9 +112,11 @@ recorded result stores a full input snapshot + hash + the rate-history version, 
 even if the source tables are rebuilt. And a scenario edited since its last calculation is blocked
 from submission until you recalculate (stale-input guard).
 
-**Q (Actuary/Compliance): Is the approval actually enforced or just displayed?** Enforced
-server-side. The size of the indicated change determines the required sign-off role
-(Pricing Manager < 5%, Chief Pricing Actuary 5–10%, Pricing Committee > 10%); the review
-endpoint **rejects** an approval whose asserted role is too junior and records the blocked
-attempt in the audit log. In production the role comes from your IdP / Unity Catalog group
-membership rather than being asserted at review time.
+**Q (Actuary/Compliance): Is the approval actually enforced or just displayed?** The *policy* is
+enforced server-side: the size of the indicated change sets the required sign-off role
+(Pricing Manager < 5%, Chief Pricing Actuary 5–10%, Pricing Committee > 10%), and the review
+endpoint **rejects** an approval whose role is too junior, recording the blocked attempt in the
+append-only audit log. **Honest scope:** in this sandbox the acting **role is asserted at review
+time** (no IdP is wired in), so the gate proves the policy check, not the person's identity. In
+production the role binds to your IdP / Unity Catalog group membership so a user can't claim a role
+they don't hold. We present it as policy enforcement, not identity enforcement.

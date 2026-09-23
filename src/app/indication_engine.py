@@ -231,7 +231,7 @@ def calc_segment(
         detail_years=detail,
         total_earned_premium=sum_ep,
         raw_reported_loss_ratio=(sum_reported / sum_ep) if sum_ep else 0.0,
-        on_level_reported_loss_ratio=(sum_reported / sum_olep),
+        on_level_reported_loss_ratio=(sum_reported / sum_olep) if sum_olep else 0.0,
         overall_on_level_factor=(sum_olep / sum_ep) if sum_ep else 1.0,
         on_level_method=on_level_method,
     )

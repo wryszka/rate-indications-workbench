@@ -202,6 +202,17 @@ async def compute_on_level(lob: str, terr: str, exp: list[ExperienceYear], setti
     return None, {"method": on_level.LEGACY}
 
 
+def _build_snapshot(assumptions: dict, experience_version: Any, settings: dict,
+                    prospective_period: int, exp: list) -> dict[str, Any]:
+    """Single source of truth for the reproducibility snapshot — used by both
+    record_calculation (what's stored) and scenario_input_hash (the stale-input
+    check), so their hashes can never silently diverge."""
+    return {"assumptions": assumptions, "experience_version": experience_version,
+            "rate_history_version": settings.get("rate_history_version"),
+            "premium_settings": settings, "prospective_period": prospective_period,
+            "accident_years": [e.accident_year for e in exp]}
+
+
 def _snapshot_hash(snapshot: dict[str, Any]) -> str:
     return hashlib.sha256(json.dumps(snapshot, sort_keys=True, default=str).encode()).hexdigest()
 
@@ -428,11 +439,7 @@ async def scenario_input_hash(scenario_id: str) -> str:
     exp_ver = sc.get("experience_version")
     exp, _ = await _segment_experience(sc["lob_code"], sc["territory_code"], version=exp_ver)
     settings = det.get("premium_settings") or {}
-    snapshot = {"assumptions": det["assumptions"], "experience_version": exp_ver,
-                "rate_history_version": settings.get("rate_history_version"),
-                "premium_settings": settings, "prospective_period": _i(sc["indication_period"]),
-                "accident_years": [e.accident_year for e in exp]}
-    return _snapshot_hash(snapshot)
+    return _snapshot_hash(_build_snapshot(det["assumptions"], exp_ver, settings, _i(sc["indication_period"]), exp))
 
 
 async def record_calculation(scenario_id: str) -> dict[str, Any]:
@@ -456,10 +463,7 @@ async def record_calculation(scenario_id: str) -> dict[str, Any]:
     steps = decompose(exp, crl, period, det["baseline"], det["assumptions"], baseline_factors=base_factors,
                       scenario_factors=factors, premium_basis_label=_basis_label(base_settings, settings))
     rid = str(uuid.uuid4())
-    snapshot = {"assumptions": det["assumptions"], "experience_version": exp_ver,
-                "rate_history_version": settings.get("rate_history_version"),
-                "premium_settings": settings, "prospective_period": period,
-                "accident_years": [e.accident_year for e in exp]}
+    snapshot = _build_snapshot(det["assumptions"], exp_ver, settings, period, exp)
     input_hash = _snapshot_hash(snapshot)
     prem_summary = _premium_summary(res, summary)
     await execute_query(
@@ -565,12 +569,15 @@ async def trigger_reset() -> dict[str, Any]:
     app-created (non-baseline) scenario and its assumptions + results, leaving
     the seeded approved baselines. The append-only audit log is never deleted —
     the reset itself is recorded there (immutability is the point)."""
-    non_base = f"(SELECT scenario_id FROM {fqn('indication_scenarios')} WHERE NOT is_baseline)"
-    removed = await execute_query(f"SELECT count(*) n FROM {fqn('indication_scenarios')} WHERE NOT is_baseline")
+    # Pristine = the seeded state: keep the approved baselines AND the seeded demo scenarios
+    # (scenario_id LIKE 'demo-%'); drop only what was created in-app during the session.
+    where = "WHERE NOT is_baseline AND scenario_id NOT LIKE 'demo-%'"
+    non_base = f"(SELECT scenario_id FROM {fqn('indication_scenarios')} {where})"
+    removed = await execute_query(f"SELECT count(*) n FROM {fqn('indication_scenarios')} {where}")
     n = _i(removed[0]["n"]) if removed else 0
     await execute_query(f"DELETE FROM {fqn('indication_results')} WHERE scenario_id IN {non_base}")
     await execute_query(f"DELETE FROM {fqn('indication_assumptions')} WHERE scenario_id IN {non_base}")
-    await execute_query(f"DELETE FROM {fqn('indication_scenarios')} WHERE NOT is_baseline")
+    await execute_query(f"DELETE FROM {fqn('indication_scenarios')} {where}")
     await execute_query(
         f"""INSERT INTO {fqn('indication_audit_log')}
             (event_id, log_ts, scenario_id, action, actor, from_status, to_status,

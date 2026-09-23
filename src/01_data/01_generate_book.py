@@ -143,6 +143,71 @@ for (lob, terr), rows in exp_by_seg.items():
                           result_id=rid if act == "CALCULATE" else None,
                           note="baseline seeded", details=None))
 
+# ---- Seed a couple of demo scenarios (non-baseline, id demo-*) so the Review/Scenarios agents
+#      render out of the box. Preserved across in-app Reset (which keeps baselines + demo-*). ----
+_dl, _dt, _tail, _sev, _freq = "GENERAL_LIABILITY", "DE", "long", 0.055, -0.015
+if (_dl, _dt) in exp_by_seg:
+    _rows = exp_by_seg[(_dl, _dt)]
+    _base_a = baseline_assumptions(_tail, _sev, _freq)
+    _scen_a = dict(_base_a, severity_trend=0.08, large_loss_load=0.06)   # "Actuarial Recommended"
+    _ey = [ExperienceYear(accident_year=r["accident_year"], earned_premium=r["earned_premium"],
+                          reported_incurred=r["reported_incurred"], claim_count=r["claim_count"],
+                          exposure=r["exposure"], rate_level_index=r["rate_level_index"],
+                          ldf_to_ultimate=r["ldf_to_ultimate"]) for r in _rows]
+    _rst = rate_state[(_dl, _dt)]
+    _prem = {"method": "legacy_annual_index", "reference_rate_date": _rst["reference_rate_date"].isoformat(),
+             "baseline_effective_date": _rst["baseline_effective_date"].isoformat(),
+             "baseline_rate_index": _rst["baseline_rate_index"], "policy_term_days": _rst["policy_term_days"],
+             "rate_history_version": VERSION, "event_overrides": []}
+
+    def _seed_demo(sid, name, status, submitted, selected, comment):
+        res = calc_segment(_ey, _rst["current_rate_level"], PROSPECTIVE, _scen_a, on_level_method="legacy_annual_index")
+        rid = str(uuid.uuid4())
+        snap = {"assumptions": _scen_a, "experience_version": VERSION, "rate_history_version": VERSION,
+                "premium_settings": _prem, "prospective_period": PROSPECTIVE,
+                "accident_years": [r["accident_year"] for r in _rows]}
+        ih = hashlib.sha256(json.dumps(snap, sort_keys=True, default=str).encode()).hexdigest()
+        scenarios.append(dict(scenario_id=sid, scenario_name=name, lob_code=_dl, territory_code=_dt,
+                              indication_period=PROSPECTIVE, status=status, is_baseline=False, owner=USER,
+                              reviewer=None, created_by=USER, created_at=NOW, updated_at=NOW,
+                              submitted_at=(NOW if submitted else None), reviewed_at=None, approved_at=None,
+                              selected_rate_change=selected, selection_comment=comment, comments="Seeded demo scenario.",
+                              cloned_from=f"baseline-{_dl}-{_dt}-{PROSPECTIVE}", experience_version=VERSION,
+                              premium_settings_json=json.dumps(_prem), last_calculated_input_hash=ih))
+        for nm, val in _scen_a.items():
+            assumptions.append(dict(scenario_id=sid, assumption_name=nm, assumption_value=float(val),
+                                    baseline_value=float(_base_a[nm]), unit=ASSUMPTION_META.get(nm, {}).get("unit", ""),
+                                    updated_by=USER, updated_at=NOW))
+        results.append(dict(result_id=rid, scenario_id=sid, calc_version=CALC_VERSION, experience_version=VERSION,
+                            indicated_rate_change=round(res.indicated_rate_change, 6),
+                            selected_rate_change=(selected if selected is not None else None),
+                            projected_loss_ratio=round(res.projected_loss_ratio, 6),
+                            permissible_loss_ratio=round(res.permissible_loss_ratio, 6),
+                            experience_loss_ratio=round(res.experience_loss_ratio, 6),
+                            required_premium=round(res.required_premium, 2),
+                            on_level_earned_premium=round(res.on_level_earned_premium, 2),
+                            projected_ultimate_loss=round(res.projected_ultimate_loss, 2),
+                            decomposition_json="[]", detail_json=json.dumps(res.detail_years),
+                            calculated_by=USER, calculation_timestamp=NOW,
+                            input_snapshot_json=json.dumps(snap, default=str), input_hash=ih,
+                            rate_history_version=VERSION, premium_summary_json=json.dumps(
+                                {"method": "legacy_annual_index", "total_earned_premium": round(res.total_earned_premium, 2),
+                                 "total_on_level_earned_premium": round(res.on_level_earned_premium, 2),
+                                 "overall_on_level_factor": round(res.overall_on_level_factor, 6),
+                                 "raw_reported_loss_ratio": round(res.raw_reported_loss_ratio, 6),
+                                 "on_level_reported_loss_ratio": round(res.on_level_reported_loss_ratio, 6)})))
+        seq = [("CREATE", None, "DRAFT"), ("EDIT", None, None), ("CALCULATE", None, None)]
+        if submitted:
+            seq.append(("SUBMIT", "DRAFT", "SUBMITTED"))
+        for act, frm, to in seq:
+            audit.append(dict(event_id=str(uuid.uuid4()), log_ts=NOW, scenario_id=sid, action=act, actor=USER,
+                              from_status=frm, to_status=to, calc_version=CALC_VERSION,
+                              result_id=(rid if act == "CALCULATE" else None), note="demo scenario seeded", details=None))
+
+    _seed_demo(f"demo-draft-{_dl}-{_dt}-{PROSPECTIVE}", "Actuarial Recommended (draft)", "DRAFT", False, None, None)
+    _seed_demo(f"demo-submitted-{_dl}-{_dt}-{PROSPECTIVE}", "Higher severity — for review", "SUBMITTED", True,
+               0.08, "Severity up on latest experience; selected moderated for competitive reasons.")
+
 write(scenarios, "indication_scenarios")
 write(assumptions, "indication_assumptions")
 write(results, "indication_results")

@@ -103,9 +103,44 @@ level?" — a standard actuarial adjustment, not a forecast and not loss dev/tre
   **Phase 3** policy-level rerating. And still: calc→governed UC function/job (unchanged — the
   app still computes in-process; NOT claimed migrated).
 
+## 2026-09-23 — second 8-agent review + remediation
+
+Verdict SHIP WITH ROADMAPPED GAPS (7/8; Incumbent Champion HOLD). Applied the cheap,
+high-consensus fixes; labelled the larger architectural gap honestly.
+- **Code robustness** (senior-dev): `_parse_suggested` now uses `json.raw_decode` from the
+  object start (trailing model prose can't break the suggestion parse); explicit zero-denominator
+  guard on `on_level_reported_loss_ratio`; the reproducibility snapshot is built by one shared
+  `_build_snapshot()` used by both record and stale-check (no hash divergence).
+- **Agent discoverability** (user + UI/UX): seeded demo scenarios (`demo-*`) so the Review/
+  Scenarios agents render out-of-box; `trigger_reset` preserves baselines AND `demo-*` scenarios;
+  agent affordances made prominent + consistent; Learn split into **two tabs**; disclaimers added
+  to Indications + Genie pages.
+- **Trust** (decision-maker): governance/agent answers show the underlying evidence/SQL, so a
+  narrative can be checked against the record (no unverifiable AI claim).
+- **Honest labelling:**
+  - Approval enforcement: the policy is enforced server-side by change magnitude; the acting
+    **role is asserted in the demo** and would be bound to IdP / UC group membership in production
+    (stated in DEMO_QA + the Review UI) — not claimed as full IdP enforcement today.
+  - Credibility Z remains an expert-set governed override (not Bühlmann) — labelled; recommend
+    agent carries an explicit "validate before use" warning.
+  - **Standard is now v2.3** (STANDARDS.md updated): v2.3 adds a P0 "platform-native" gate —
+    agents/tools/decision-gates should be Databricks-native (Agent Bricks / Mosaic AI Agent
+    Framework via UC AI Gateway, MCP-first, calc as UC functions), with the app a thin client.
+    **We do NOT meet that gate today** — the agents are app-hosted Foundation-Model calls and the
+    calc runs in-process. This is the honest, labelled roadmap (a re-architecture, not a quick fix);
+    it is the single highest-value next step per the current-Databricks reviewer.
+  - **Least-privilege grants** (security P2): the app SP needs `SELECT` on the schema + `INSERT`/
+    `UPDATE`/`DELETE` on the scenario/assumption/result/audit tables + warehouse `CAN_USE` +
+    Genie `CAN_RUN` — NOT schema-wide `MODIFY` (which includes ALTER/DROP the app never uses).
+    Documented in README; append-only audit is the standing tamper control regardless.
+- **Do NOT re-add `temperature`** to the FM call: Claude Sonnet-5 rejects it (`BAD_REQUEST`); the
+  senior-dev's temperature=0 suggestion is invalid for this endpoint (recorded so it isn't re-tried).
+
 ### Gotchas hit
 - `ALTER TABLE … ADD COLUMNS IF NOT EXISTS` is not accepted here — introspect existing columns
   and add only the missing ones.
+- `serving_endpoints.query` needs `ChatMessage` objects (not dicts); Claude Sonnet-5 rejects the
+  `temperature` parameter (`BAD_REQUEST`).
 - A Databricks notebook cell that **starts with `# MAGIC %md`** is treated as an all-
   markdown cell — `spark.sql(...)` lines below it in the same cell silently don't run.
   Keep section headers as plain `# ---- x ----` comments in code cells.

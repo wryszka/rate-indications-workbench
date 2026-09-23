@@ -62,7 +62,10 @@ databricks bundle run rate_indications_full_build -t dev -p DEV
 
 # 2. app (first deploy is two-phase — app must be created so its SP exists, then grant it)
 databricks apps create rate-indications-workbench -p DEV      # once
-#   grant the app SP: CAN_USE on the warehouse; USE CATALOG / USE SCHEMA / SELECT / MODIFY on the schema
+#   grant the app SP (least privilege): CAN_USE on the warehouse; USE CATALOG + USE SCHEMA;
+#   SELECT on the schema; and INSERT/UPDATE/DELETE on the scenario/assumption/result/audit tables
+#   (NOT schema-wide MODIFY — the app never ALTERs/DROPs). Genie space: CAN_RUN. The audit log is
+#   delta.appendOnly=true (tamper control). Schema-wide MODIFY works but is over-broad — see docs/DECISIONS.md.
 ./deploy.sh
 
 # offline: validate the math and calibrate the book without Databricks
