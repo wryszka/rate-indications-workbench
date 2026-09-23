@@ -1,15 +1,22 @@
 import { useState } from 'react';
 import { Send } from 'lucide-react';
-import { api, GenieAnswer } from '../lib/api';
-import { Spin, Explainer } from '../components/common';
+import { api, GenieAnswer } from '@/lib/api';
+import { Spin, Explainer } from '@/components/common';
+import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/accordion';
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 
 type Turn = { q: string; a?: GenieAnswer; error?: string };
-
 const SUGGESTIONS = [
   'Which segments have the largest indicated rate increase?',
   'What is the earned premium by territory for General Liability?',
   'Show the loss ratio by product',
 ];
+const isNum = (v: any) => v !== null && v !== '' && !isNaN(Number(v));
 
 export default function Genie() {
   const [q, setQ] = useState('');
@@ -31,12 +38,12 @@ export default function Genie() {
     } finally { setBusy(false); }
   };
 
-  const isNum = (v: any) => v !== null && v !== '' && !isNaN(Number(v));
-
   return (
-    <main className="main">
-      <h2>Ask the book</h2>
-      <p className="mut" style={{ marginTop: 2, fontSize: 13 }}>Natural-language questions over the same governed experience the indications are built on.</p>
+    <div className="space-y-5">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">Ask the book</h1>
+        <p className="mt-1 text-sm text-muted-foreground">Natural-language questions over the same governed experience the indications are built on.</p>
+      </div>
 
       <Explainer>
         Ask a plain-English question about the book — premiums, losses, loss ratios, indications by product or
@@ -44,49 +51,50 @@ export default function Genie() {
         governed data the rest of the workbench uses; it doesn't change anything.
       </Explainer>
 
-      <div className="card">
-        <div className="selectrow" style={{ marginBottom: 10 }}>
-          <div className="fld" style={{ flex: 1, minWidth: 260 }}>
-            <label>Your question</label>
-            <input className="txt" style={{ width: '100%' }} value={q} placeholder="e.g. which segments need the biggest increase?"
+      <Card><CardContent className="space-y-3 p-4">
+        <div className="flex items-end gap-2">
+          <div className="flex-1"><Label className="mb-1 block">Your question</Label>
+            <Input value={q} placeholder="e.g. which segments need the biggest increase?"
               onChange={e => setQ(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') ask(q); }} />
           </div>
-          <button className="act" onClick={() => ask(q)} disabled={busy || !q.trim()} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <Send size={14} /> Ask {busy && <Spin />}
-          </button>
+          <Button onClick={() => ask(q)} disabled={busy || !q.trim()}><Send className="h-4 w-4" /> Ask {busy && <Spin />}</Button>
         </div>
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          {SUGGESTIONS.map(s => <button key={s} className="chipq" onClick={() => ask(s)} disabled={busy}>{s}</button>)}
+        <div className="flex flex-wrap gap-2">
+          {SUGGESTIONS.map(s => <Button key={s} size="sm" variant="outline" onClick={() => ask(s)} disabled={busy}>{s}</Button>)}
         </div>
-      </div>
+      </CardContent></Card>
 
       {turns.slice().reverse().map((t, ri) => (
-        <div className="card" key={turns.length - 1 - ri}>
-          <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 8 }}>{t.q}</div>
-          {!t.a && !t.error && <div className="mut"><Spin /> thinking…</div>}
-          {t.error && <div className="flag high">{t.error}</div>}
+        <Card key={turns.length - 1 - ri}><CardContent className="space-y-2 p-4">
+          <div className="font-semibold">{t.q}</div>
+          {!t.a && !t.error && <div className="text-muted-foreground"><Spin /> thinking…</div>}
+          {t.error && <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">{t.error}</div>}
           {t.a && (
             <>
-              <p style={{ marginTop: 0, color: 'var(--slate2)', fontSize: 14 }}>{t.a.answer}</p>
+              <p className="text-sm text-muted-foreground">{t.a.answer}</p>
               {t.a.sql && (
-                <details className="exp"><summary>Query it ran</summary>
-                  <div className="body"><pre style={{ whiteSpace: 'pre-wrap', fontSize: 12, fontFamily: 'ui-monospace,Menlo,monospace', color: 'var(--slate2)' }}>{t.a.sql}</pre></div>
-                </details>
+                <Accordion type="single" collapsible>
+                  <AccordionItem value="sql" className="border-0">
+                    <AccordionTrigger className="text-muted-foreground">Query it ran</AccordionTrigger>
+                    <AccordionContent><pre className="overflow-auto rounded-md bg-muted/50 p-3 font-mono text-xs text-muted-foreground">{t.a.sql}</pre></AccordionContent>
+                  </AccordionItem>
+                </Accordion>
               )}
               {t.a.columns && t.a.rows && t.a.rows.length > 0 && (
-                <table style={{ marginTop: 8 }}>
-                  <thead><tr>{t.a.columns.map(c => <th key={c} className={isNum(t.a!.rows![0][t.a!.columns!.indexOf(c)]) ? 'num' : ''}>{c}</th>)}</tr></thead>
-                  <tbody>
+                <Table>
+                  <TableHeader><TableRow>{t.a.columns.map(c => <TableHead key={c} className={isNum(t.a!.rows![0][t.a!.columns!.indexOf(c)]) ? 'text-right' : ''}>{c}</TableHead>)}</TableRow></TableHeader>
+                  <TableBody>
                     {t.a.rows.map((row, i) => (
-                      <tr key={i}>{row.map((v, j) => <td key={j} className={isNum(v) ? 'num' : ''}>{String(v ?? '')}</td>)}</tr>
+                      <TableRow key={i} className="hover:bg-transparent">{row.map((v, j) => <TableCell key={j} className={isNum(v) ? 'text-right tnum' : ''}>{String(v ?? '')}</TableCell>)}</TableRow>
                     ))}
-                  </tbody>
-                </table>
+                  </TableBody>
+                </Table>
               )}
+              {t.a.enabled === false && <Badge variant="outline">Genie not configured</Badge>}
             </>
           )}
-        </div>
+        </CardContent></Card>
       ))}
-    </main>
+    </div>
   );
 }

@@ -1,9 +1,30 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Sparkles, RotateCcw, Save } from 'lucide-react';
-import { api, Result, Step, ScenarioDetail } from '../lib/api';
-import { useMeta, useAiMode, Spin, Explainer, Waterfall } from '../components/common';
-import { pct, pts, money, toDisplay, fromDisplay, unitSuffix, signClass, arrow } from '../lib/format';
+import { api, Result, Step, ScenarioDetail } from '@/lib/api';
+import { useMeta, useAiMode, Spin, Explainer, Waterfall } from '@/components/common';
+import { pct, pts, money, toDisplay, fromDisplay, unitSuffix, signClass, arrow } from '@/lib/format';
+import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
+import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/accordion';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { cn } from '@/lib/utils';
+
+const toneClass = (c: string) => (c === 'pos' ? 'text-success' : c === 'neg' ? 'text-warning' : 'text-muted-foreground');
+
+function Kpi({ label, value, tone, busy }: { label: string; value: string; tone?: string; busy?: boolean }) {
+  return (
+    <Card><CardContent className="p-4">
+      <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</div>
+      <div className={cn('mt-1 flex items-center gap-2 text-2xl font-extrabold tnum', tone)}>{value}{busy && <Spin />}</div>
+    </CardContent></Card>
+  );
+}
 
 export default function Indications() {
   const meta = useMeta()!;
@@ -25,16 +46,11 @@ export default function Indications() {
   const [explaining, setExplaining] = useState(false);
   const timer = useRef<any>(null);
 
-  // load segment baseline
   useEffect(() => {
     setBase(null); setPreview(null); setExplain(null);
-    api.segment(lob, territory, period).then(v => {
-      setBase(v.baseline);
-      setAssum({ ...v.baseline.assumptions });
-    });
+    api.segment(lob, territory, period).then(v => { setBase(v.baseline); setAssum({ ...v.baseline.assumptions }); });
   }, [lob, territory, period]);
 
-  // debounced live preview whenever assumptions change
   useEffect(() => {
     if (!base) return;
     if (timer.current) clearTimeout(timer.current);
@@ -47,7 +63,7 @@ export default function Indications() {
     return () => timer.current && clearTimeout(timer.current);
   }, [assum, base]);
 
-  if (!base) return <main className="main"><h2>Rate Indications</h2><div className="card"><Spin /> Loading segment…</div></main>;
+  if (!base) return <div><h1 className="text-2xl font-bold tracking-tight">Rate Indications</h1><Card className="mt-4"><CardContent className="p-6"><Spin /> Loading segment…</CardContent></Card></div>;
 
   const baseRes = base.result!;
   const cur = preview?.result ?? baseRes;
@@ -55,17 +71,16 @@ export default function Indications() {
   const changePts = (cur.indicated_rate_change - baseRes.indicated_rate_change) * 100;
   const groups = ['Loss', 'Method', 'Provision'];
   const metaByName = base.assumption_meta;
+  const prodLabel = meta.products.find(p => p.code === lob)?.label ?? lob;
+  const terrLabel = meta.territories.find(t => t.code === territory)?.label ?? territory;
 
   const doExplain = () => {
     setExplaining(true);
     api.explain({ payload: {
       segment: `${base.scenario.lob_code} / ${base.scenario.territory_code}`, period,
       result: cur, baseline_indicated: baseRes.indicated_rate_change, decomposition: preview?.decomposition ?? [],
-    }, mode: aiMode })
-      .then(r => setExplain({ answer: r.answer, source: r.source }))
-      .finally(() => setExplaining(false));
+    }, mode: aiMode }).then(r => setExplain({ answer: r.answer, source: r.source })).finally(() => setExplaining(false));
   };
-
   const doSave = async () => {
     const { scenario_id } = await api.createScenario({ name, lob, territory, period });
     await api.saveAssumptions(scenario_id, assum);
@@ -73,151 +88,162 @@ export default function Indications() {
     nav(`/scenarios?open=${scenario_id}`);
   };
 
-  const prodLabel = meta.products.find(p => p.code === lob)?.label ?? lob;
-  const terrLabel = meta.territories.find(t => t.code === territory)?.label ?? territory;
-
   return (
-    <main className="main">
-      <div className="hero">
-        <h2>{prodLabel} · {terrLabel} · {period}</h2>
-        <div className="meta">Loss-ratio rate indication {dirty ? '· unsaved preview — not recorded until saved & calculated' : '· showing the approved baseline'}</div>
+    <div className="space-y-5">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">{prodLabel} · {terrLabel} · {period}</h1>
+        <p className="mt-1 text-sm text-muted-foreground">Loss-ratio rate indication {dirty ? '· unsaved preview — not recorded until saved & calculated' : '· showing the approved baseline'}</p>
       </div>
 
       <Explainer>
-        We take this segment's earned premium and losses, restate old premium at today's rate level,
-        develop losses to their expected final cost, trend them to {period}, then compare the projected
-        loss ratio with the loss ratio the price can permit after expenses, commission, reinsurance and
-        profit. The gap is the indicated rate change. Edit any assumption on the right and every number
-        updates instantly; the waterfall shows which assumption moved it and by how much.
+        We take this segment's earned premium and losses, restate old premium at today's rate level, develop losses
+        to their expected final cost, trend them to {period}, then compare the projected loss ratio with the loss
+        ratio the price can permit after expenses, commission, reinsurance and profit. The gap is the indicated rate
+        change. Edit any assumption on the right and every number updates instantly; the waterfall shows which
+        assumption moved it and by how much.
       </Explainer>
 
-      <div className="selectrow">
-        <div className="fld"><label>Product</label>
-          <select value={lob} onChange={e => setSeg('lob', e.target.value)}>
-            {meta.products.map(p => <option key={p.code} value={p.code}>{p.label}</option>)}
-          </select></div>
-        <div className="fld"><label>Territory</label>
-          <select value={territory} onChange={e => setSeg('territory', e.target.value)}>
-            {meta.territories.map(t => <option key={t.code} value={t.code}>{t.label}</option>)}
-          </select></div>
-        <div className="fld"><label>Period</label>
-          <select value={period} onChange={e => setSeg('period', e.target.value)}>
-            {meta.periods.map(y => <option key={y} value={y}>{y}</option>)}
-          </select></div>
-        <div style={{ flex: 1 }} />
-        <button className="ghost" onClick={() => setAssum({ ...base.assumptions })} disabled={!dirty}>
-          <RotateCcw size={14} style={{ verticalAlign: -2 }} /> Reset to baseline
-        </button>
-        <button className="act" onClick={() => setSaveOpen(true)} disabled={!dirty}>
-          <Save size={14} style={{ verticalAlign: -2 }} /> Save as scenario
-        </button>
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="w-52"><Label className="mb-1 block">Product</Label>
+          <Select value={lob} onValueChange={v => setSeg('lob', v)}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>{meta.products.map(p => <SelectItem key={p.code} value={p.code}>{p.label}</SelectItem>)}</SelectContent>
+          </Select>
+        </div>
+        <div className="w-44"><Label className="mb-1 block">Territory</Label>
+          <Select value={territory} onValueChange={v => setSeg('territory', v)}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>{meta.territories.map(t => <SelectItem key={t.code} value={t.code}>{t.label}</SelectItem>)}</SelectContent>
+          </Select>
+        </div>
+        <div className="w-28"><Label className="mb-1 block">Period</Label>
+          <Select value={String(period)} onValueChange={v => setSeg('period', v)}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>{meta.periods.map(y => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}</SelectContent>
+          </Select>
+        </div>
+        <div className="flex-1" />
+        <Button variant="outline" onClick={() => setAssum({ ...base.assumptions })} disabled={!dirty}><RotateCcw className="h-4 w-4" /> Reset to baseline</Button>
+        <Button onClick={() => setSaveOpen(true)} disabled={!dirty}><Save className="h-4 w-4" /> Save as scenario</Button>
       </div>
 
-      <div className="tiles">
-        <div className="tile"><div className="k">Current rate level</div><div className="v">{(baseRes.current_rate_level ?? 1).toFixed(3)}</div></div>
-        <div className="tile"><div className="k">Projected loss ratio</div><div className="v">{pct(cur.projected_loss_ratio, 1, false)}</div></div>
-        <div className="tile"><div className="k">Baseline indication</div><div className="v">{pct(baseRes.indicated_rate_change)}</div></div>
-        <div className="tile"><div className="k">Scenario indication</div><div className={'v ' + (cur.indicated_rate_change >= 0 ? 'warn' : 'pos')}>{pct(cur.indicated_rate_change)} {busy && <Spin />}</div></div>
-        <div className="tile"><div className="k">Change vs baseline</div><div className={'v ' + signClass(changePts / 100)}>{arrow(changePts / 100)} {pts(changePts)}</div></div>
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
+        <Kpi label="Current rate level" value={(baseRes.current_rate_level ?? 1).toFixed(3)} />
+        <Kpi label="Projected loss ratio" value={pct(cur.projected_loss_ratio, 1, false)} />
+        <Kpi label="Baseline indication" value={pct(baseRes.indicated_rate_change)} />
+        <Kpi label="Scenario indication" value={pct(cur.indicated_rate_change)} tone={cur.indicated_rate_change >= 0 ? 'text-warning' : 'text-success'} busy={busy} />
+        <Kpi label="Change vs baseline" value={`${arrow(changePts / 100)} ${pts(changePts)}`} tone={toneClass(signClass(changePts / 100))} />
       </div>
 
-      <div className="grid2">
-        <div className="card">
-          <div className="eyebrow">Assumptions</div>
-          <table>
-            <thead><tr><th>Assumption</th><th className="num">Baseline</th><th className="num">Scenario</th></tr></thead>
-            <tbody>
-              {groups.map(g => {
-                const names = base.assumption_order.filter(n => metaByName[n].group === g);
-                if (!names.length) return null;
-                return [
-                  <tr key={g + 'h'}><td colSpan={3} className="aigrp">{g}</td></tr>,
-                  ...names.map(n => {
-                    const m = metaByName[n];
-                    const bv = base.assumptions[n];
-                    const changed = Math.abs((assum[n] ?? 0) - bv) > 1e-9;
-                    return (
-                      <tr key={n}>
-                        <td>{m.label}</td>
-                        <td className="num mut">{toDisplay(n, bv, m.unit)}{unitSuffix(m.unit)}</td>
-                        <td className="num">
-                          <input className="num" style={changed ? { borderColor: 'var(--brand)', fontWeight: 700 } : {}}
-                            value={toDisplay(n, assum[n] ?? bv, m.unit)}
-                            onChange={e => setAssum(a => ({ ...a, [n]: fromDisplay(e.target.value, m.unit) }))}
-                            inputMode="decimal" />
-                          <span className="mut" style={{ fontSize: 11, marginLeft: 3 }}>{unitSuffix(m.unit)}</span>
-                        </td>
-                      </tr>
-                    );
-                  }),
-                ];
-              })}
-            </tbody>
-          </table>
-        </div>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardContent className="p-0">
+            <div className="px-4 pt-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Assumptions</div>
+            <Table>
+              <TableHeader><TableRow><TableHead>Assumption</TableHead><TableHead className="text-right">Baseline</TableHead><TableHead className="text-right">Scenario</TableHead></TableRow></TableHeader>
+              <TableBody>
+                {groups.map(g => {
+                  const names = base.assumption_order.filter(n => metaByName[n].group === g);
+                  if (!names.length) return null;
+                  return [
+                    <TableRow key={g + 'h'} className="hover:bg-transparent"><TableCell colSpan={3} className="py-2 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">{g}</TableCell></TableRow>,
+                    ...names.map(n => {
+                      const m = metaByName[n]; const bv = base.assumptions[n];
+                      const changed = Math.abs((assum[n] ?? 0) - bv) > 1e-9;
+                      return (
+                        <TableRow key={n} className="hover:bg-transparent">
+                          <TableCell>{m.label}</TableCell>
+                          <TableCell className="text-right tnum text-muted-foreground">{toDisplay(n, bv, m.unit)}{unitSuffix(m.unit)}</TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              <Input inputMode="decimal" value={toDisplay(n, assum[n] ?? bv, m.unit)}
+                                onChange={e => setAssum(a => ({ ...a, [n]: fromDisplay(e.target.value, m.unit) }))}
+                                className={cn('h-8 w-24 text-right tnum', changed && 'border-primary font-bold')} />
+                              <span className="w-4 text-xs text-muted-foreground">{unitSuffix(m.unit)}</span>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    }),
+                  ];
+                })}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
 
-        <div className="card">
-          <div className="eyebrow">Why the indication moved</div>
-          <p className="mut" style={{ marginTop: 0, fontSize: 13 }}>
-            From <strong>{pct(baseRes.indicated_rate_change)}</strong> (baseline) to <strong className={cur.indicated_rate_change >= 0 ? '' : 'pos'}>{pct(cur.indicated_rate_change)}</strong> — contributions sum exactly to the {pts(changePts)} move.
-          </p>
-          <Waterfall steps={preview?.decomposition ?? []} />
-          <div style={{ marginTop: 16, borderTop: '1px solid var(--line)', paddingTop: 14 }}>
-            <button className="ghost" onClick={doExplain} disabled={explaining}>
-              <Sparkles size={14} style={{ verticalAlign: -2 }} /> Explain indication {explaining && <Spin />}
-            </button>
-            {explain && (
-              <div className="banner" style={{ marginTop: 12 }}>
-                <span className={'chip ' + (explain.source === 'live' ? 'active' : 'plain')} style={{ marginRight: 8 }}>{explain.source}</span>
-                {explain.answer}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      <details className="exp">
-        <summary>Experience detail — how each accident year builds up</summary>
-        <div className="body" style={{ maxWidth: '100%' }}>
-          <table>
-            <thead><tr>
-              <th className="num">AY</th><th className="num">Earned</th><th className="num">On-level</th>
-              <th className="num">Reported</th><th className="num">LDF</th><th className="num">Ultimate</th>
-              <th className="num">Trend ×</th><th className="num">Trended ult.</th><th className="num">Loss ratio</th>
-            </tr></thead>
-            <tbody>
-              {(cur.detail_years ?? baseRes.detail_years ?? []).map(d => (
-                <tr key={d.accident_year}>
-                  <td className="num">{d.accident_year}</td>
-                  <td className="num">{money(d.earned_premium, meta.currency)}</td>
-                  <td className="num">{money(d.on_level_earned_premium, meta.currency)}</td>
-                  <td className="num">{money(d.reported_incurred, meta.currency)}</td>
-                  <td className="num">{d.effective_ldf.toFixed(3)}</td>
-                  <td className="num">{money(d.ultimate_loss, meta.currency)}</td>
-                  <td className="num">{d.trend_factor.toFixed(3)}</td>
-                  <td className="num">{money(d.trended_ultimate, meta.currency)}</td>
-                  <td className="num">{pct(d.loss_ratio, 1, false)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </details>
-
-      {saveOpen && (
-        <div className="modal" style={{ display: 'flex' }}>
-          <div className="box">
-            <h2 style={{ fontSize: 16 }}>Save as scenario</h2>
-            <p className="mut" style={{ fontSize: 13, marginTop: 4 }}>A new DRAFT scenario for {prodLabel} · {terrLabel} · {period}. Calculating it records the result and an audit event.</p>
-            <label>Scenario name</label>
-            <input className="txt" value={name} onChange={e => setName(e.target.value)} style={{ width: '100%' }} />
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
-              <button className="ghost" onClick={() => setSaveOpen(false)}>Cancel</button>
-              <button className="act" onClick={doSave}>Create scenario</button>
+        <Card>
+          <CardContent className="space-y-3 p-4">
+            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Why the indication moved</div>
+            <p className="text-sm text-muted-foreground">
+              From <span className="font-semibold text-foreground">{pct(baseRes.indicated_rate_change)}</span> (baseline) to{' '}
+              <span className={cn('font-semibold', cur.indicated_rate_change >= 0 ? 'text-warning' : 'text-success')}>{pct(cur.indicated_rate_change)}</span>{' '}
+              — contributions sum exactly to the {pts(changePts)} move.
+            </p>
+            <Waterfall steps={preview?.decomposition ?? []} />
+            <div className="border-t pt-3">
+              <Button variant="outline" onClick={doExplain} disabled={explaining}><Sparkles className="h-4 w-4" /> Explain indication {explaining && <Spin />}</Button>
+              {explain && (
+                <div className="mt-3 rounded-md border bg-muted/40 p-3 text-sm">
+                  <Badge variant={explain.source === 'live' ? 'success' : 'secondary'} className="mb-2">{explain.source}</Badge>
+                  <p>{explain.answer}</p>
+                </div>
+              )}
             </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardContent className="px-4 py-0">
+          <Accordion type="single" collapsible>
+            <AccordionItem value="detail" className="border-0">
+              <AccordionTrigger>Experience detail — how each accident year builds up</AccordionTrigger>
+              <AccordionContent>
+                <Table>
+                  <TableHeader><TableRow>
+                    <TableHead className="text-right">AY</TableHead><TableHead className="text-right">Earned</TableHead><TableHead className="text-right">On-level</TableHead>
+                    <TableHead className="text-right">Reported</TableHead><TableHead className="text-right">LDF</TableHead><TableHead className="text-right">Ultimate</TableHead>
+                    <TableHead className="text-right">Trend ×</TableHead><TableHead className="text-right">Trended ult.</TableHead><TableHead className="text-right">Loss ratio</TableHead>
+                  </TableRow></TableHeader>
+                  <TableBody>
+                    {(cur.detail_years ?? baseRes.detail_years ?? []).map(d => (
+                      <TableRow key={d.accident_year}>
+                        <TableCell className="text-right tnum">{d.accident_year}</TableCell>
+                        <TableCell className="text-right tnum">{money(d.earned_premium, meta.currency)}</TableCell>
+                        <TableCell className="text-right tnum">{money(d.on_level_earned_premium, meta.currency)}</TableCell>
+                        <TableCell className="text-right tnum">{money(d.reported_incurred, meta.currency)}</TableCell>
+                        <TableCell className="text-right tnum">{d.effective_ldf.toFixed(3)}</TableCell>
+                        <TableCell className="text-right tnum">{money(d.ultimate_loss, meta.currency)}</TableCell>
+                        <TableCell className="text-right tnum">{d.trend_factor.toFixed(3)}</TableCell>
+                        <TableCell className="text-right tnum">{money(d.trended_ultimate, meta.currency)}</TableCell>
+                        <TableCell className="text-right tnum">{pct(d.loss_ratio, 1, false)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </AccordionContent>
+            </AccordionItem>
+          </Accordion>
+        </CardContent>
+      </Card>
+
+      <Dialog open={saveOpen} onOpenChange={setSaveOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Save as scenario</DialogTitle>
+            <DialogDescription>A new DRAFT scenario for {prodLabel} · {terrLabel} · {period}. Calculating it records the result and an audit event.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label>Scenario name</Label>
+            <Input value={name} onChange={e => setName(e.target.value)} />
           </div>
-        </div>
-      )}
-    </main>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setSaveOpen(false)}>Cancel</Button>
+            <Button onClick={doSave}>Create scenario</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }

@@ -1,10 +1,30 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { LayoutGrid, TrendingUp, GitCompare, CheckCircle2, BookOpen } from 'lucide-react';
-import { api, Portfolio } from '../lib/api';
-import { useMeta, Spin } from '../components/common';
-import { disclaimerLong } from '../lib/brand';
-import { pct, money } from '../lib/format';
+import { LayoutGrid, TrendingUp, GitCompare, CheckCircle2, BookOpen, Info } from 'lucide-react';
+import { api, Portfolio } from '@/lib/api';
+import { useMeta, Spin } from '@/components/common';
+import { disclaimerLong } from '@/lib/brand';
+import { pct, money } from '@/lib/format';
+import { Card, CardContent } from '@/components/ui/card';
+
+function Kpi({ label, value, tone }: { label: string; value: string; tone?: 'warn' | 'pos' }) {
+  return (
+    <Card>
+      <CardContent className="p-4">
+        <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</div>
+        <div className={'mt-1 text-2xl font-extrabold tnum ' + (tone === 'warn' ? 'text-warning' : tone === 'pos' ? 'text-success' : '')}>{value}</div>
+      </CardContent>
+    </Card>
+  );
+}
+
+const CARDS = [
+  { to: '/portfolio', icon: LayoutGrid, t: 'Portfolio', d: "Every segment's indication and selected rate; drill into one." },
+  { to: '/indications', icon: TrendingUp, t: 'Rate Indications', d: 'Set assumptions and see the indication move, live and explained.' },
+  { to: '/scenarios', icon: GitCompare, t: 'Scenarios', d: 'Save, clone and compare alternative assumption sets.' },
+  { to: '/review', icon: CheckCircle2, t: 'Review & Approve', d: 'Draft → Submitted → Approved, with the full audit trail.' },
+  { to: '/learn', icon: BookOpen, t: 'Learn', d: 'How each step maps to a governed platform object.' },
+];
 
 export default function Home() {
   const meta = useMeta()!;
@@ -12,51 +32,63 @@ export default function Home() {
   useEffect(() => { api.portfolio(meta.periods[0] || 2027).then(setP).catch(() => {}); }, [meta]);
 
   return (
-    <main className="main">
-      <div className="hero">
-        <h2>Rate Indications &amp; Assumption Setting</h2>
-        <div className="meta">{meta.entity_name} · European commercial P&amp;C · a governed workflow from experience to an approved rate</div>
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">Rate Indications &amp; Assumption Setting</h1>
+        <p className="mt-1 text-sm text-muted-foreground">{meta.entity_name} · European commercial P&amp;C · a governed workflow from experience to an approved rate</p>
       </div>
 
       {p && (
-        <div className="banner">
-          <strong>Why this matters.</strong> On this book (~{money(p.total_premium, p.currency)} on-level premium),
-          the portfolio indicates <strong>{pct(p.portfolio_indicated)}</strong> — about{' '}
-          <strong>{money(Math.abs(p.portfolio_indicated * p.total_premium), p.currency)}</strong> of rate movement
-          under review. Repricing slowly, by spreadsheet and email, leaves underpriced segments unaddressed between
-          cycles and is hard to audit. This decides it in one governed place — and layers on your existing tools.
-        </div>
+        <Card className="border-primary/20 bg-primary/[0.03]">
+          <CardContent className="p-5 text-sm">
+            <span className="font-semibold">Why this matters. </span>
+            On this book (~{money(p.total_premium, p.currency)} on-level premium), the portfolio indicates{' '}
+            <span className="font-semibold">{pct(p.portfolio_indicated)}</span> — about{' '}
+            <span className="font-semibold">{money(Math.abs(p.portfolio_indicated * p.total_premium), p.currency)}</span>{' '}
+            of rate movement under review. Repricing slowly, by spreadsheet and email, leaves underpriced segments
+            unaddressed between cycles and is hard to audit. This decides it in one governed place — and layers on
+            your existing tools.
+          </CardContent>
+        </Card>
       )}
 
-      <div className="banner">
-        <strong>About this demo.</strong> {disclaimerLong(meta.entity_name).replace('About this demo. ', '')}
-      </div>
+      <Card className="border-amber-500/30 bg-warning/[0.06]">
+        <CardContent className="flex gap-3 p-4 text-sm text-muted-foreground">
+          <Info className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+          <span><span className="font-semibold text-foreground">About this demo. </span>{disclaimerLong(meta.entity_name).replace('About this demo. ', '')}</span>
+        </CardContent>
+      </Card>
 
       {p ? (
-        <div className="tiles">
-          <div className="tile"><div className="k">Portfolio indication</div><div className={'v ' + (p.portfolio_indicated >= 0 ? 'warn' : 'pos')}>{pct(p.portfolio_indicated)}</div></div>
-          <div className="tile"><div className="k">On-level premium</div><div className="v">{money(p.total_premium, p.currency)}</div></div>
-          <div className="tile"><div className="k">Segments</div><div className="v">{p.segments.length}</div></div>
-          <div className="tile"><div className="k">Need increase</div><div className="v">{p.segments.filter(s => s.baseline_indicated > 0.0005).length}</div></div>
-          <div className="tile"><div className="k">Need decrease</div><div className="v">{p.segments.filter(s => s.baseline_indicated < -0.0005).length}</div></div>
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
+          <Kpi label="Portfolio indication" value={pct(p.portfolio_indicated)} tone={p.portfolio_indicated >= 0 ? 'warn' : 'pos'} />
+          <Kpi label="On-level premium" value={money(p.total_premium, p.currency)} />
+          <Kpi label="Segments" value={String(p.segments.length)} />
+          <Kpi label="Need increase" value={String(p.segments.filter(s => s.baseline_indicated > 0.0005).length)} />
+          <Kpi label="Need decrease" value={String(p.segments.filter(s => s.baseline_indicated < -0.0005).length)} />
         </div>
-      ) : <div className="card"><Spin /> Loading portfolio…</div>}
+      ) : <Card><CardContent className="p-6"><Spin /> Loading portfolio…</CardContent></Card>}
 
-      <div className="card">
-        <div className="eyebrow">The workflow</div>
-        <p style={{ marginTop: 0, color: 'var(--slate2)', fontSize: 14 }}>
-          Review the current indication for a product and territory, inspect the assumptions behind it,
-          change one and watch the indication and its decomposition update, compare scenarios, then record
-          a selected rate and take it through review and approval — every calculation recorded and auditable.
+      <div>
+        <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">The workflow</div>
+        <p className="max-w-3xl text-sm text-muted-foreground">
+          Review the current indication for a product and territory, inspect the assumptions behind it, change one
+          and watch the indication and its decomposition update, compare scenarios, then record a selected rate and
+          take it through review and approval — every calculation recorded and auditable.
         </p>
-        <div className="navcards" style={{ marginTop: 12 }}>
-          <Link className="navcard" to="/portfolio"><div className="t"><LayoutGrid size={17} /> Portfolio</div><div className="d">Every segment's indication and selected rate; drill into one.</div></Link>
-          <Link className="navcard" to="/indications"><div className="t"><TrendingUp size={17} /> Rate Indications</div><div className="d">Set assumptions and see the indication move, live and explained.</div></Link>
-          <Link className="navcard" to="/scenarios"><div className="t"><GitCompare size={17} /> Scenarios</div><div className="d">Save, clone and compare alternative assumption sets.</div></Link>
-          <Link className="navcard" to="/review"><div className="t"><CheckCircle2 size={17} /> Review &amp; Approve</div><div className="d">Draft → Submitted → Approved, with the full audit trail.</div></Link>
-          <Link className="navcard" to="/learn"><div className="t"><BookOpen size={17} /> Learn</div><div className="d">How each step maps to a governed platform object.</div></Link>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {CARDS.map(c => (
+            <Link key={c.to} to={c.to}>
+              <Card className="h-full transition-colors hover:border-primary/40 hover:bg-accent/40">
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-2 font-semibold"><c.icon className="h-4 w-4" /> {c.t}</div>
+                  <div className="mt-1 text-sm text-muted-foreground">{c.d}</div>
+                </CardContent>
+              </Card>
+            </Link>
+          ))}
         </div>
       </div>
-    </main>
+    </div>
   );
 }

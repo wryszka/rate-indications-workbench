@@ -1,24 +1,73 @@
-@import './tokens.css';
-/* tiny additions only — tokens.css is the source of truth */
-a{color:inherit;text-decoration:none}
-.selectrow{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px}
-.selectrow .fld{display:flex;flex-direction:column;gap:4px}
-.selectrow label{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--mut)}
-select,input.txt{padding:8px 10px;border:1px solid var(--line2);border-radius:8px;font:inherit;background:#fff}
-input.num{width:92px;padding:6px 8px;border:1px solid var(--line2);border-radius:7px;font:inherit;text-align:right;font-variant-numeric:tabular-nums}
-.wf{display:flex;flex-direction:column;gap:6px}
-.wf .bar{display:flex;align-items:center;gap:10px;font-size:12.5px}
-.wf .barname{width:150px;flex-shrink:0;color:var(--slate2)}
-.wf .bartrack{flex:1;position:relative;height:18px;background:#f1f5f9;border-radius:5px}
-.wf .barfill{position:absolute;top:0;height:18px;border-radius:5px}
-.wf .barval{width:70px;text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
-.pos{color:var(--emerald)} .neg{color:var(--red)}
-details.exp{margin-bottom:16px;border:1px solid var(--line);border-radius:12px;background:#fff;padding:0 16px}
-details.exp summary{cursor:pointer;padding:12px 0;font-weight:600;font-size:13px;color:var(--slate2)}
-details.exp .body{padding:0 0 14px;color:var(--mut);font-size:13px;max-width:74ch;line-height:1.6}
-.aigrp{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--mut2);padding:10px 0 2px}
-.navcards{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}@media(max-width:900px){.navcards{grid-template-columns:1fr}}
-.navcard{display:block;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;box-shadow:var(--shadow)}
-.navcard:hover{border-color:var(--brand-line)}
-.navcard .t{font-weight:700;font-size:15px;margin-bottom:4px;display:flex;align-items:center;gap:8px}
-.navcard .d{color:var(--mut);font-size:13px}
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 0 0% 3.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 3.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 3.9%;
+    --primary: 0 0% 9%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 0 0% 96.1%;
+    --secondary-foreground: 0 0% 9%;
+    --muted: 0 0% 96.1%;
+    --muted-foreground: 0 0% 45.1%;
+    --accent: 0 0% 96.1%;
+    --accent-foreground: 0 0% 9%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 89.8%;
+    --input: 0 0% 89.8%;
+    --ring: 0 0% 3.9%;
+    --radius: 0.5rem;
+    --chart-1: 12 76% 61%;
+    --chart-2: 173 58% 39%;
+    --chart-3: 197 37% 24%;
+    --chart-4: 43 74% 66%;
+    --chart-5: 27 87% 67%;
+    --sidebar-background: 0 0% 98%;
+  }
+
+  .dark {
+    /* Databricks dark palette */
+    --background: 211 24% 9%;
+    --foreground: 210 20% 93%;
+    --card: 211 24% 9%;
+    --card-foreground: 210 20% 93%;
+    --popover: 203 14% 18%;
+    --popover-foreground: 210 20% 93%;
+    --primary: 210 20% 93%;
+    --primary-foreground: 211 24% 9%;
+    --secondary: 203 14% 18%;
+    --secondary-foreground: 210 20% 93%;
+    --muted: 208 18% 26%;
+    --muted-foreground: 210 16% 65%;
+    --accent: 208 18% 26%;
+    --accent-foreground: 210 20% 93%;
+    --destructive: 349 67% 55%;
+    --destructive-foreground: 210 20% 93%;
+    --border: 208 18% 26%;
+    --input: 208 18% 26%;
+    --ring: 199 89% 48%;
+    --sidebar-background: 206 18% 15%;
+    --chart-1: 220 70% 50%;
+    --chart-2: 160 60% 45%;
+    --chart-3: 30 80% 55%;
+    --chart-4: 280 65% 60%;
+    --chart-5: 340 75% 55%;
+  }
+}
+
+@layer base {
+  * { @apply border-border; }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-feature-settings: 'cv11';
+  }
+  .tnum { font-variant-numeric: tabular-nums; }
+}

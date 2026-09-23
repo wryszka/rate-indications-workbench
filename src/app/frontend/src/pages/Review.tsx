@@ -1,7 +1,14 @@
 import { useEffect, useState } from 'react';
-import { api, ApiError, Scenario, AuditEvent, ScenarioDetail } from '../lib/api';
-import { useMeta, Spin, Explainer } from '../components/common';
-import { pct } from '../lib/format';
+import { AlertTriangle, ShieldCheck } from 'lucide-react';
+import { api, ApiError, Scenario, AuditEvent, ScenarioDetail } from '@/lib/api';
+import { useMeta, Spin, Explainer } from '@/components/common';
+import { pct } from '@/lib/format';
+import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Label } from '@/components/ui/label';
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 
 export default function Review() {
   const meta = useMeta()!;
@@ -20,7 +27,6 @@ export default function Review() {
     const a = Math.abs(ind);
     return meta.approval_roles.find(r => a >= r.min && a < r.max)?.role ?? meta.approval_roles.at(-1)?.role ?? '—';
   };
-
   const queue = scns.filter(s => s.status === 'SUBMITTED');
   const act = async (id: string, decision: 'approve' | 'reject') => {
     setDenied(d => ({ ...d, [id]: '' }));
@@ -35,75 +41,77 @@ export default function Review() {
   };
 
   return (
-    <main className="main">
-      <h2>Review &amp; Approve</h2>
-      <p className="mut" style={{ marginTop: 2, fontSize: 13 }}>Governed sign-off — routed by the size of the change, with a full append-only audit trail.</p>
-
-      <Explainer>
-        Scenarios submitted for review appear here. Who must approve depends on the size of the indicated
-        change (routing shown per row). Approving or rejecting is itself an audited event. The audit trail
-        for any scenario shows every action, who did it and when — and the recorded result carries the exact
-        method version and data version, so any number can be reproduced later.
-      </Explainer>
-
-      <div className="card">
-        <div className="eyebrow">Approval routing</div>
-        <div className="lin">
-          {meta.approval_roles.map((r, i) => (
-            <span key={i} className="node">|change| {(r.min * 100).toFixed(0)}–{r.max >= 90 ? '∞' : (r.max * 100).toFixed(0)}% → <strong>{r.role}</strong></span>
-          ))}
-        </div>
+    <div className="space-y-5">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">Review &amp; Approve</h1>
+        <p className="mt-1 text-sm text-muted-foreground">Governed sign-off — routed by the size of the change, with a full append-only audit trail.</p>
       </div>
 
-      <div className="card">
-        <div className="eyebrow">Review queue {queue.length > 0 && <span className="chip differs" style={{ marginLeft: 6 }}>{queue.length}</span>}</div>
-        {loading ? <Spin /> : queue.length === 0 ? <p className="mut" style={{ fontSize: 13 }}>Nothing awaiting review. Submit a scenario from the Scenarios page.</p> : (
-          <table>
-            <thead><tr><th>Scenario</th><th>Segment</th><th className="num">Indicated</th><th>Requires</th><th>Approve as</th><th></th></tr></thead>
-            <tbody>
+      <Explainer>
+        Scenarios submitted for review appear here. Who must approve depends on the size of the indicated change
+        (routing shown below). Approving or rejecting is itself an audited event. The audit trail for any scenario
+        shows every action, who did it and when — and the recorded result carries the exact method version and data
+        version, so any number can be reproduced later.
+      </Explainer>
+
+      <Card><CardContent className="space-y-2 p-4">
+        <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Approval routing</div>
+        <div className="flex flex-wrap gap-2 text-sm">
+          {meta.approval_roles.map((r, i) => (
+            <span key={i} className="rounded-md border bg-muted/40 px-2.5 py-1">|change| {(r.min * 100).toFixed(0)}–{r.max >= 90 ? '∞' : (r.max * 100).toFixed(0)}% → <span className="font-semibold">{r.role}</span></span>
+          ))}
+        </div>
+      </CardContent></Card>
+
+      <Card><CardContent className="space-y-3 p-4">
+        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Review queue {queue.length > 0 && <Badge variant="warning">{queue.length}</Badge>}</div>
+        {loading ? <Spin /> : queue.length === 0 ? <p className="text-sm text-muted-foreground">Nothing awaiting review. Submit a scenario from the Scenarios page.</p> : (
+          <Table>
+            <TableHeader><TableRow><TableHead>Scenario</TableHead><TableHead>Segment</TableHead><TableHead className="text-right">Indicated</TableHead><TableHead>Requires</TableHead><TableHead>Approve as</TableHead><TableHead></TableHead></TableRow></TableHeader>
+            <TableBody>
               {queue.map(s => {
                 const req = roleFor(s.indicated_rate_change);
                 return (
-                  <tr key={s.scenario_id}>
-                    <td>{s.scenario_name}</td>
-                    <td className="mut">{s.lob_code} · {s.territory_code} · {s.indication_period}</td>
-                    <td className="num" style={{ fontWeight: 700 }}>{s.indicated_rate_change != null ? pct(s.indicated_rate_change) : '—'}</td>
-                    <td><span className="chip plain">{req}</span></td>
-                    <td>
-                      <select value={asRole[s.scenario_id] ?? req}
-                        onChange={e => setAsRole(r => ({ ...r, [s.scenario_id]: e.target.value }))}
-                        style={{ padding: '5px 8px', fontSize: 12.5 }}>
-                        {roles.map(r => <option key={r} value={r}>{r}</option>)}
-                      </select>
-                    </td>
-                    <td style={{ display: 'flex', gap: 6 }}>
-                      <button className="act" onClick={() => act(s.scenario_id, 'approve')}>Approve</button>
-                      <button className="ghost" onClick={() => act(s.scenario_id, 'reject')}>Reject</button>
-                    </td>
-                  </tr>
+                  <TableRow key={s.scenario_id} className="hover:bg-transparent">
+                    <TableCell className="font-medium">{s.scenario_name}</TableCell>
+                    <TableCell className="text-muted-foreground">{s.lob_code} · {s.territory_code} · {s.indication_period}</TableCell>
+                    <TableCell className="text-right tnum font-semibold">{s.indicated_rate_change != null ? pct(s.indicated_rate_change) : '—'}</TableCell>
+                    <TableCell><Badge variant="outline">{req}</Badge></TableCell>
+                    <TableCell>
+                      <Select value={asRole[s.scenario_id] ?? req} onValueChange={v => setAsRole(r => ({ ...r, [s.scenario_id]: v }))}>
+                        <SelectTrigger className="h-8 w-52"><SelectValue /></SelectTrigger>
+                        <SelectContent>{roles.map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}</SelectContent>
+                      </Select>
+                    </TableCell>
+                    <TableCell><div className="flex gap-2">
+                      <Button size="sm" onClick={() => act(s.scenario_id, 'approve')}>Approve</Button>
+                      <Button size="sm" variant="outline" onClick={() => act(s.scenario_id, 'reject')}>Reject</Button>
+                    </div></TableCell>
+                  </TableRow>
                 );
               })}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         )}
         {Object.entries(denied).filter(([, m]) => m).map(([id, m]) => (
-          <div key={id} className="flag high" style={{ marginTop: 10 }}>⚠ {m}</div>
-        ))}
-      </div>
-
-      <div className="card">
-        <div className="eyebrow">Audit trail</div>
-        <div className="selectrow">
-          <div className="fld"><label>Scenario</label>
-            <select value={openAudit ?? ''} onChange={e => setOpenAudit(e.target.value || null)}>
-              <option value="">Select a scenario…</option>
-              {scns.map(s => <option key={s.scenario_id} value={s.scenario_id}>{s.scenario_name} — {s.lob_code}/{s.territory_code} ({s.status})</option>)}
-            </select>
+          <div key={id} className="flex items-center gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            <AlertTriangle className="h-4 w-4" /> {m}
           </div>
+        ))}
+      </CardContent></Card>
+
+      <Card><CardContent className="space-y-3 p-4">
+        <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Audit trail</div>
+        <div className="w-full max-w-xl">
+          <Label className="mb-1 block">Scenario</Label>
+          <Select value={openAudit ?? ''} onValueChange={v => setOpenAudit(v || null)}>
+            <SelectTrigger><SelectValue placeholder="Select a scenario…" /></SelectTrigger>
+            <SelectContent>{scns.map(s => <SelectItem key={s.scenario_id} value={s.scenario_id}>{s.scenario_name} — {s.lob_code}/{s.territory_code} ({s.status})</SelectItem>)}</SelectContent>
+          </Select>
         </div>
         {openAudit && <AuditTrail id={openAudit} />}
-      </div>
-    </main>
+      </CardContent></Card>
+    </div>
   );
 }
 
@@ -113,28 +121,27 @@ function AuditTrail({ id }: { id: string }) {
   useEffect(() => { api.audit(id).then(d => setEvents(d.events)); api.scenario(id).then(setDetail); }, [id]);
   if (!events) return <Spin />;
   return (
-    <>
+    <div className="space-y-3">
       {detail?.result && (
-        <div className="banner" style={{ marginBottom: 12 }}>
-          <span className="gov">reproducible</span> &nbsp; Recorded result: indicated <strong>{pct(detail.result.indicated_rate_change)}</strong> ·
-          calc version <strong>{detail.result.calc_version}</strong> · data version <strong>{detail.result.experience_version}</strong> ·
-          by {detail.result.calculated_by}
+        <div className="flex items-start gap-2 rounded-md border bg-muted/40 p-3 text-sm">
+          <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-success" />
+          <span><span className="font-semibold text-success">Reproducible.</span> Recorded result: indicated <span className="font-semibold">{pct(detail.result.indicated_rate_change)}</span> · calc version <span className="font-semibold">{detail.result.calc_version}</span> · data version <span className="font-semibold">{detail.result.experience_version}</span> · by {detail.result.calculated_by}</span>
         </div>
       )}
-      <table>
-        <thead><tr><th>When</th><th>Action</th><th>Actor</th><th>Status</th><th>Note</th></tr></thead>
-        <tbody>
+      <Table>
+        <TableHeader><TableRow><TableHead>When</TableHead><TableHead>Action</TableHead><TableHead>Actor</TableHead><TableHead>Status</TableHead><TableHead>Note</TableHead></TableRow></TableHeader>
+        <TableBody>
           {events.map((e, i) => (
-            <tr key={i}>
-              <td className="mut" style={{ fontSize: 12 }}>{String(e.log_ts).replace('T', ' ').slice(0, 19)}</td>
-              <td><span className="chip plain">{e.action}</span></td>
-              <td className="mut">{e.actor}</td>
-              <td className="mut">{e.from_status && e.to_status ? `${e.from_status} → ${e.to_status}` : e.to_status || ''}</td>
-              <td className="mut" style={{ fontSize: 12 }}>{e.note}</td>
-            </tr>
+            <TableRow key={i} className="hover:bg-transparent">
+              <TableCell className="text-xs text-muted-foreground">{String(e.log_ts).replace('T', ' ').slice(0, 19)}</TableCell>
+              <TableCell><Badge variant="outline">{e.action}</Badge></TableCell>
+              <TableCell className="text-muted-foreground">{e.actor}</TableCell>
+              <TableCell className="text-muted-foreground">{e.from_status && e.to_status ? `${e.from_status} → ${e.to_status}` : e.to_status || ''}</TableCell>
+              <TableCell className="text-xs text-muted-foreground">{e.note}</TableCell>
+            </TableRow>
           ))}
-        </tbody>
-      </table>
-    </>
+        </TableBody>
+      </Table>
+    </div>
   );
 }
