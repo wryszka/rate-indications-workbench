@@ -5,10 +5,13 @@ click, **IF-ASKED** the answer to the obvious question.
 
 ---
 
-**Beat 0 — framing (Home)**
+**Beat 0 — the business case (Home)**
 - GO: Home.
-- SAY: "Bricksurance's pricing actuary decides how much to change rates. Here's that decision, governed end to end."
+- SAY: "Repricing today is slow, spreadsheet-driven and hard to audit. This decides it in one governed place."
+- DO: point at the headline — ~€600m book, +1.5% portfolio indication ≈ ~€9m of rate movement being decided.
+- SAY: "The cost of doing it slowly is underpriced segments you don't fix between cycles."
 - IF-ASKED (real?): fictional insurer, synthetic data; the method and the governance are the point.
+- IF-ASKED (replace our tools?): it layers on them — enrich/wrap — not rip-and-replace.
 
 **Beat 1 — the portfolio (Portfolio)**
 - GO: Portfolio, period 2027.

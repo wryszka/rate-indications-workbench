@@ -55,3 +55,40 @@ actuary, large (>10%) the pricing committee.
 **Q (Decision-maker): What's the portfolio picture?** The Portfolio view aggregates every
 segment's approved baseline indication premium-weighted, so you see the book-level rate
 need and which segments drive it — increases and decreases both.
+
+**Q (Decision-maker): What's the business case — why fund this over what we do today?**
+Rate indications today are typically a slow, spreadsheet-and-email cycle: hard to audit,
+easy to fat-finger, and inconsistent across a book. This closes the loop from experience to
+a governed, signed-off rate decision in one place, with every number reproducible. On this
+synthetic book, ~€600m GWP with a +1.5% portfolio indication is ~€9m of gross rate movement
+being decided — the value is deciding it faster, consistently, and defensibly, and not
+leaving underpriced segments unaddressed between cycles. It layers on your existing pricing
+tools (enrich/wrap) rather than replacing them.
+
+**Q (Incumbent champion): Credibility is just a Z slider — where's the formula?** V1 treats
+credibility as an **expert-set override with an audit trail** (the value, who set it, and
+when are all recorded), blended toward the break-even permissible loss ratio as the
+complement. It does **not** yet compute Z from a limited-fluctuation or Bühlmann-Straub
+standard on claim counts — that's the roadmap. For the demo the point is that the assumption
+is explicit, editable and governed, not that Z is derived. Labelled, not hidden.
+
+**Q (Incumbent champion / Actuary): Is there any discounting / time-value for long-tail?**
+No — V1 trends losses to the prospective period at **nominal** cost level; there is no
+payment-pattern discounting, IBNR model or ALAE/ULAE split. For a long-tail line (GL/PL)
+that overstates the required premium relative to a discounted basis by roughly the interest
+earned over the payout horizon. It's an **accepted V1 simplification**: the method is a
+transparent nominal loss-ratio indication. A discounted / payment-pattern basis (and the
+reserving workbench's triangle machinery) is the roadmap.
+
+**Q (Actuary): How is on-levelling done — mid-term rate changes?** V1 on-levels with a single
+cumulative rate-level **index** per segment (parallelogram-style at the annual grain) and
+assumes rates hold from the last experience year to the prospective period. Mid-term changes,
+selective adjustments and filed-vs-earned reconciliation are the roadmap. Any interim rate
+moves before filing would shift the indication further.
+
+**Q (Actuary/Compliance): Is the approval actually enforced or just displayed?** Enforced
+server-side. The size of the indicated change determines the required sign-off role
+(Pricing Manager < 5%, Chief Pricing Actuary 5–10%, Pricing Committee > 10%); the review
+endpoint **rejects** an approval whose asserted role is too junior and records the blocked
+attempt in the audit log. In production the role comes from your IdP / Unity Catalog group
+membership rather than being asserted at review time.

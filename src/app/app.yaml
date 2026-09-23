@@ -17,4 +17,4 @@ env:
   - name: AI_RESPONSE_MODE
     value: "cached"
   - name: GENIE_SPACE_ID
-    value: ""
+    value: "01f1b74bccf71a3599d56e67452bb182"

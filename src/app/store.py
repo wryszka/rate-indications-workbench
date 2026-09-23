@@ -205,27 +205,26 @@ async def create_scenario(name: str, lob: str, terr: str, period: int, cloned_fr
             FROM {fqn('indication_experience')}""",
         {"sid": sid, "name": name, "lob": lob, "terr": terr, "period": period,
          "usr": current_user(), "src": (cloned_from or None)})
-    # copy assumptions
-    vals = ",".join(
-        f"(:sid,'{n}',{float(src_cur.get(n, 0.0))},{float(base.get(n, 0.0))},"
-        f"'{ASSUMPTION_META[n]['unit']}',:usr,current_timestamp())"
-        for n in ASSUMPTION_ORDER)
-    await execute_query(
-        f"""INSERT INTO {fqn('indication_assumptions')}
-            (scenario_id, assumption_name, assumption_value, baseline_value, unit, updated_by, updated_at)
-            VALUES {vals}""", {"sid": sid, "usr": current_user()})
+    # copy assumptions — one fully-parameterised INSERT per row (no interpolation)
+    for n in ASSUMPTION_ORDER:
+        await execute_query(
+            f"""INSERT INTO {fqn('indication_assumptions')}
+                (scenario_id, assumption_name, assumption_value, baseline_value, unit, updated_by, updated_at)
+                VALUES (:sid, :name, :val, :base, :unit, :usr, current_timestamp())""",
+            {"sid": sid, "name": n, "val": float(src_cur.get(n, 0.0)),
+             "base": float(base.get(n, 0.0)), "unit": ASSUMPTION_META[n]["unit"], "usr": current_user()})
     await _audit(sid, "CREATE", None, "DRAFT", note=(f"cloned from {cloned_from}" if cloned_from else "new draft"))
     return sid
 
 
 async def save_assumptions(scenario_id: str, assumptions: dict[str, float]) -> None:
-    for name in ASSUMPTION_ORDER:
+    for name in ASSUMPTION_ORDER:            # names come only from this whitelist
         if name in assumptions:
             await execute_query(
-                f"""UPDATE {fqn('indication_assumptions')} SET assumption_value = {float(assumptions[name])},
+                f"""UPDATE {fqn('indication_assumptions')} SET assumption_value = :val,
                     updated_by=:usr, updated_at=current_timestamp()
-                    WHERE scenario_id=:sid AND assumption_name='{name}'""",
-                {"usr": current_user(), "sid": scenario_id})
+                    WHERE scenario_id=:sid AND assumption_name=:name""",
+                {"val": float(assumptions[name]), "usr": current_user(), "sid": scenario_id, "name": name})
     await execute_query(
         f"UPDATE {fqn('indication_scenarios')} SET updated_at=current_timestamp() WHERE scenario_id=:sid",
         {"sid": scenario_id})
@@ -252,11 +251,13 @@ async def record_calculation(scenario_id: str) -> dict[str, Any]:
              selected_rate_change, projected_loss_ratio, permissible_loss_ratio, experience_loss_ratio,
              required_premium, on_level_earned_premium, projected_ultimate_loss,
              decomposition_json, detail_json, calculated_by, calculation_timestamp)
-            VALUES (:rid, :sid, :cv, :ev, {res.indicated_rate_change}, {res.indicated_rate_change},
-                    {res.projected_loss_ratio}, {res.permissible_loss_ratio}, {res.experience_loss_ratio},
-                    {res.required_premium}, {res.on_level_earned_premium}, {res.projected_ultimate_loss},
+            VALUES (:rid, :sid, :cv, :ev, :ind, :ind,
+                    :plr, :perm, :elr, :reqp, :olep, :ult,
                     :decomp, :detail, :usr, current_timestamp())""",
         {"rid": rid, "sid": scenario_id, "cv": CALC_VERSION, "ev": exp_ver,
+         "ind": res.indicated_rate_change, "plr": res.projected_loss_ratio,
+         "perm": res.permissible_loss_ratio, "elr": res.experience_loss_ratio,
+         "reqp": res.required_premium, "olep": res.on_level_earned_premium, "ult": res.projected_ultimate_loss,
          "decomp": json.dumps(steps), "detail": json.dumps(res.detail_years), "usr": current_user()})
     await execute_query(
         f"UPDATE {fqn('indication_scenarios')} SET updated_at=current_timestamp() WHERE scenario_id=:sid",
@@ -267,27 +268,86 @@ async def record_calculation(scenario_id: str) -> dict[str, Any]:
 
 async def select_rate(scenario_id: str, selected: float, comment: str) -> None:
     await execute_query(
-        f"""UPDATE {fqn('indication_scenarios')} SET selected_rate_change={float(selected)},
+        f"""UPDATE {fqn('indication_scenarios')} SET selected_rate_change=:sel,
             selection_comment=:c, updated_at=current_timestamp() WHERE scenario_id=:sid""",
-        {"c": comment, "sid": scenario_id})
+        {"sel": float(selected), "c": comment, "sid": scenario_id})
     await _audit(scenario_id, "SELECT_RATE", None, None, note=f"selected {selected:+.3f}: {comment}")
 
 
-async def set_status(scenario_id: str, action: str, reviewer: str | None = None, note: str | None = None) -> None:
+# Role seniority for server-side approval enforcement. Higher rank can approve
+# anything a lower rank can. In production these ranks come from the IdP / UC
+# group membership; here the reviewer asserts a role and we gate on its rank.
+ROLE_RANK = {"Pricing Manager": 1, "Chief Pricing Actuary": 2, "Pricing Committee": 3}
+
+
+async def required_role(abs_change: float) -> str:
+    rows = await execute_query(
+        f"""SELECT approver_role FROM {fqn('approval_role')}
+            WHERE :c >= min_abs_change AND :c < max_abs_change ORDER BY min_abs_change DESC LIMIT 1""",
+        {"c": abs_change})
+    return rows[0]["approver_role"] if rows else "Pricing Committee"
+
+
+class ApprovalDenied(Exception):
+    """Raised when the asserted approver role is too junior for the change size."""
+
+
+async def set_status(scenario_id: str, action: str, reviewer: str | None = None,
+                     note: str | None = None, approver_role: str | None = None) -> dict[str, Any]:
     transitions = {"submit": ("SUBMITTED", "submitted_at"), "review": ("REVIEWED", "reviewed_at"),
                    "approve": ("APPROVED", "approved_at"), "reject": ("REJECTED", None)}
     to, ts_col = transitions[action]
-    cur = await execute_query(f"SELECT status FROM {fqn('indication_scenarios')} WHERE scenario_id=:sid", {"sid": scenario_id})
+    cur = await execute_query(
+        f"SELECT status FROM {fqn('indication_scenarios')} WHERE scenario_id=:sid", {"sid": scenario_id})
     frm = cur[0]["status"] if cur else None
-    sets = [f"status='{to}'", "updated_at=current_timestamp()"]
+
+    # --- server-side approval enforcement: role must be senior enough for the size ---
+    if action == "approve":
+        res = await execute_query(
+            f"""SELECT indicated_rate_change FROM {fqn('indication_results')}
+                WHERE scenario_id=:sid ORDER BY calculation_timestamp DESC LIMIT 1""", {"sid": scenario_id})
+        ind = abs(_f(res[0]["indicated_rate_change"])) if res else 0.0
+        need = await required_role(ind)
+        have_rank = ROLE_RANK.get(approver_role or "", 0)
+        if have_rank < ROLE_RANK.get(need, 99):
+            await _audit(scenario_id, "APPROVE_DENIED", frm, frm,
+                         note=f"blocked: {approver_role or 'no role'} cannot approve {ind:+.1%} (needs {need})")
+            raise ApprovalDenied(
+                f"A change of {ind:+.1%} requires sign-off by {need}; "
+                f"'{approver_role or 'no role asserted'}' is not senior enough.")
+
+    sets = [f"status='{to}'", "updated_at=current_timestamp()"]   # status from fixed whitelist above
     if ts_col:
         sets.append(f"{ts_col}=current_timestamp()")
+    params: dict[str, Any] = {"sid": scenario_id}
     if reviewer:
-        sets.append("reviewer=:rev")
+        sets.append("reviewer=:rev"); params["rev"] = reviewer
     await execute_query(
-        f"UPDATE {fqn('indication_scenarios')} SET {', '.join(sets)} WHERE scenario_id=:sid",
-        {"sid": scenario_id, **({"rev": reviewer} if reviewer else {})})
-    await _audit(scenario_id, action.upper(), frm, to, note=note)
+        f"UPDATE {fqn('indication_scenarios')} SET {', '.join(sets)} WHERE scenario_id=:sid", params)
+    note_full = (note or "") + (f" [{approver_role}]" if approver_role else "")
+    await _audit(scenario_id, action.upper(), frm, to, note=note_full.strip() or None)
+    return {"status": to}
+
+
+async def trigger_reset() -> dict[str, Any]:
+    """Return the workbench to a pristine, deterministic state: drop every
+    app-created (non-baseline) scenario and its assumptions + results, leaving
+    the seeded approved baselines. The append-only audit log is never deleted —
+    the reset itself is recorded there (immutability is the point)."""
+    non_base = f"(SELECT scenario_id FROM {fqn('indication_scenarios')} WHERE NOT is_baseline)"
+    removed = await execute_query(f"SELECT count(*) n FROM {fqn('indication_scenarios')} WHERE NOT is_baseline")
+    n = _i(removed[0]["n"]) if removed else 0
+    await execute_query(f"DELETE FROM {fqn('indication_results')} WHERE scenario_id IN {non_base}")
+    await execute_query(f"DELETE FROM {fqn('indication_assumptions')} WHERE scenario_id IN {non_base}")
+    await execute_query(f"DELETE FROM {fqn('indication_scenarios')} WHERE NOT is_baseline")
+    await execute_query(
+        f"""INSERT INTO {fqn('indication_audit_log')}
+            (event_id, log_ts, scenario_id, action, actor, from_status, to_status,
+             calc_version, result_id, note, details)
+            VALUES (:eid, current_timestamp(), '(reset)', 'RESET', :actor, NULL, NULL, :cv, NULL, :note, NULL)""",
+        {"eid": str(uuid.uuid4()), "actor": current_user(), "cv": CALC_VERSION,
+         "note": f"reset to pristine baselines; removed {n} scenario(s)"})
+    return {"reset": True, "removed_scenarios": n}
 
 
 # ------------------------------------------------------------------- portfolio

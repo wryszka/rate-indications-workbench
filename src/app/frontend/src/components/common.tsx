@@ -6,11 +6,21 @@ import { pts } from '../lib/format';
 const MetaCtx = createContext<Meta | null>(null);
 export const useMeta = () => useContext(MetaCtx);
 
+// AI live/cached mode (the "yellow button"), shared app-wide.
+const AiModeCtx = createContext<{ mode: string; setMode: (m: string) => void }>({ mode: 'cached', setMode: () => {} });
+export const useAiMode = () => useContext(AiModeCtx);
+
 export function MetaProvider({ children }: { children: React.ReactNode }) {
   const [meta, setMeta] = useState<Meta | null>(null);
-  useEffect(() => { api.meta().then(setMeta).catch(() => {}); }, []);
+  const [mode, setModeState] = useState('cached');
+  useEffect(() => { api.meta().then(m => { setMeta(m); setModeState(m.ai_mode); }).catch(() => {}); }, []);
+  const setMode = (m: string) => { setModeState(m); api.setAiMode(m).catch(() => {}); };
   if (!meta) return <div className="main"><Spin /> Loading…</div>;
-  return <MetaCtx.Provider value={meta}>{children}</MetaCtx.Provider>;
+  return (
+    <MetaCtx.Provider value={meta}>
+      <AiModeCtx.Provider value={{ mode, setMode }}>{children}</AiModeCtx.Provider>
+    </MetaCtx.Provider>
+  );
 }
 
 export const Spin = () => <span className="spin" aria-label="loading" />;

@@ -113,7 +113,7 @@ def _effective_ldf(base_ldf: float, latest_base_ldf: float, selected_ldf: float)
     for the most immature year. Fully-developed years (base_ldf ~ 1.0) barely
     move; immature years move most. Keeps a single editable 'selected
     development' number meaningful across the whole triangle."""
-    if latest_base_ldf <= 1e-9:
+    if latest_base_ldf <= 1e-6:
         return base_ldf
     scale = selected_ldf / latest_base_ldf
     # Apply the scale to the *development portion* (ldf - 1), not the whole factor.
@@ -167,8 +167,12 @@ def calc_segment(
             "loss_ratio": round(trended_ult / olep, 4) if olep else None,
         })
 
-    # raw experience loss ratio (on-level, developed, trended)
-    raw_lr = sum_trended_ult / sum_olep if sum_olep else 0.0
+    # raw experience loss ratio (on-level, developed, trended). A zero on-level
+    # premium means the segment has no usable experience — fail loudly rather
+    # than record a misleading 0% indication.
+    if sum_olep <= 0:
+        raise ValueError("no on-level earned premium in the selected experience period")
+    raw_lr = sum_trended_ult / sum_olep
     # (5) loads: large-loss multiplicative on losses; cat additive as % of premium
     loaded_lr = raw_lr * (1.0 + a["large_loss_load"]) + a["cat_load"]
     # (7) permissible loss ratio

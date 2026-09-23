@@ -1,6 +1,6 @@
 """Rate Indications Workbench — FastAPI backend."""
 from __future__ import annotations
-import os
+import logging
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -10,7 +10,9 @@ from fastapi.staticfiles import StaticFiles
 import config
 import store
 import agent_client
+import genie
 
+log = logging.getLogger("rate_indications")
 app = FastAPI(title="Rate Indications Workbench")
 
 
@@ -18,7 +20,8 @@ app = FastAPI(title="Rate Indications Workbench")
 async def identity(request: Request, call_next):
     user = (request.headers.get("X-Forwarded-Email")
             or request.headers.get("X-Forwarded-Preferred-Username")
-            or request.headers.get("X-Forwarded-User") or "laurence.ryszka@databricks.com")
+            or request.headers.get("X-Forwarded-User")
+            or (config.DEV_FALLBACK_USER if not config.IN_APP_RUNTIME else "unknown"))
     config.set_current_user(user)
     return await call_next(request)
 
@@ -27,13 +30,20 @@ def ok(data): return JSONResponse(data)
 def err(msg, code=400): return JSONResponse({"error": msg}, status_code=code)
 
 
+def fail(where: str, e: Exception, code=400):
+    """Log the real error server-side; return a safe generic message to the client."""
+    log.exception("%s failed: %s", where, e)
+    return JSONResponse({"error": f"{where} failed. See server logs."}, status_code=code)
+
+
 @app.get("/api/meta")
 async def get_meta():
     m = await store.meta()
     m["entity_name"] = config.ENTITY_NAME
     m["book_flavour"] = config.BOOK_FLAVOUR
-    m["ai_mode"] = config.AI_RESPONSE_MODE
+    m["ai_mode"] = config.ai_mode()
     m["current_user"] = config.current_user()
+    m["genie_enabled"] = bool(config.GENIE_SPACE_ID)
     return ok(m)
 
 
@@ -55,7 +65,7 @@ async def post_preview(body: dict):
     try:
         return ok(await store.run_preview(body["lob"], body["territory"], int(body["period"]), body["assumptions"]))
     except Exception as e:  # noqa: BLE001
-        return err(str(e))
+        return fail("preview", e)
 
 
 @app.get("/api/scenarios")
@@ -70,7 +80,7 @@ async def create_scenario(body: dict):
                                           int(body["period"]), body.get("cloned_from"))
         return ok({"scenario_id": sid})
     except Exception as e:  # noqa: BLE001
-        return err(str(e))
+        return fail("create scenario", e)
 
 
 @app.get("/api/scenarios/{sid}")
@@ -90,13 +100,16 @@ async def calculate(sid: str):
     try:
         return ok(await store.record_calculation(sid))
     except Exception as e:  # noqa: BLE001
-        return err(str(e))
+        return fail("calculate", e)
 
 
 @app.post("/api/scenarios/{sid}/select-rate")
 async def select_rate(sid: str, body: dict):
-    await store.select_rate(sid, float(body["selected_rate_change"]), body.get("comment", ""))
-    return ok({"saved": True})
+    try:
+        await store.select_rate(sid, float(body["selected_rate_change"]), body.get("comment", ""))
+        return ok({"saved": True})
+    except Exception as e:  # noqa: BLE001
+        return fail("select rate", e)
 
 
 @app.post("/api/scenarios/{sid}/submit")
@@ -109,8 +122,15 @@ async def submit(sid: str):
 async def review(sid: str, body: dict):
     decision = body.get("decision", "approve")
     action = "approve" if decision == "approve" else "reject"
-    await store.set_status(sid, action, reviewer=config.current_user(), note=body.get("note", ""))
-    return ok({"status": action.upper() + "D" if action == "approve" else "REJECTED"})
+    try:
+        r = await store.set_status(sid, action, reviewer=config.current_user(),
+                                   note=body.get("note", ""), approver_role=body.get("approver_role"))
+        return ok(r)
+    except store.ApprovalDenied as e:
+        # Server-side governance gate: role too junior for the change size.
+        return JSONResponse({"error": str(e), "denied": True}, status_code=403)
+    except Exception as e:  # noqa: BLE001
+        return fail("review", e)
 
 
 @app.get("/api/compare")
@@ -123,9 +143,43 @@ async def audit(scenario_id: str):
     return ok({"events": await store.audit_trail(scenario_id)})
 
 
+@app.get("/api/ai-mode")
+async def get_ai_mode():
+    return ok({"mode": config.ai_mode()})
+
+
+@app.post("/api/ai-mode")
+async def set_ai_mode(body: dict):
+    return ok({"mode": config.set_ai_mode(body.get("mode", ""))})
+
+
+@app.post("/api/admin/reset")
+async def reset(body: dict | None = None):
+    """Rebuild the book + reseed the audited baselines to a pristine, deterministic
+    state (clears app-created scenarios). Triggers the governed Full Build job."""
+    try:
+        return ok(await store.trigger_reset())
+    except Exception as e:  # noqa: BLE001
+        return fail("reset", e)
+
+
+@app.get("/api/genie/status")
+async def genie_status():
+    return ok({"enabled": bool(config.GENIE_SPACE_ID), "space_id": config.GENIE_SPACE_ID})
+
+
+@app.post("/api/genie/ask")
+async def genie_ask(body: dict):
+    """Ask the book in natural language via the embedded Genie space (Conversation API)."""
+    try:
+        return ok(await genie.ask(body.get("question", ""), body.get("conversation_id")))
+    except Exception as e:  # noqa: BLE001
+        return fail("genie", e)
+
+
 @app.post("/api/explain")
 async def explain(body: dict):
-    mode = body.get("mode", config.AI_RESPONSE_MODE)
+    mode = body.get("mode", config.ai_mode())
     if body.get("scenario_id"):
         d = await store.scenario_detail(body["scenario_id"])
         sc = d.get("scenario", {})

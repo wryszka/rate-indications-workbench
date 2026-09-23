@@ -32,7 +32,7 @@ variables:
     default: ""
   genie_space_id:
     description: Genie space over the indication tables (empty hides the tab)
-    default: ""
+    default: "01f1b74bccf71a3599d56e67452bb182"
 
 targets:
   dev:

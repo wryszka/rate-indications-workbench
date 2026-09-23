@@ -7,9 +7,13 @@ export type ApprovalRole = { min: number; max: number; role: string; note: strin
 
 export type Meta = {
   entity_name: string; book_flavour: string; currency: string; calc_version: string;
-  experience_version: string; ai_mode: string; current_user: string;
+  experience_version: string; ai_mode: string; current_user: string; genie_enabled: boolean;
   products: Product[]; territories: Territory[]; periods: number[];
   assumptions: AssumptionMeta[]; approval_roles: ApprovalRole[];
+};
+export type GenieAnswer = {
+  enabled: boolean; conversation_id?: string; answer: string;
+  sql?: string | null; columns?: string[] | null; rows?: any[][] | null; status?: string;
 };
 
 export type Result = {
@@ -54,9 +58,18 @@ export type AuditEvent = {
 };
 export type LearnCard = { n: number; group: string; activity: string; how: string; links: { label: string; kind: string }[] };
 
+export class ApiError extends Error {
+  status: number; body: any;
+  constructor(message: string, status: number, body: any) { super(message); this.status = status; this.body = body; }
+}
+async function parseErr(r: Response): Promise<never> {
+  let b: any = {};
+  try { b = await r.json(); } catch { /* non-json */ }
+  throw new ApiError(b.error || r.statusText, r.status, b);
+}
 async function get<T>(url: string): Promise<T> {
   const r = await fetch('/api' + url);
-  if (!r.ok) throw new Error((await r.json()).error || r.statusText);
+  if (!r.ok) return parseErr(r);
   return r.json();
 }
 async function send<T>(method: string, url: string, body?: any): Promise<T> {
@@ -64,7 +77,7 @@ async function send<T>(method: string, url: string, body?: any): Promise<T> {
     method, headers: { 'content-type': 'application/json' },
     body: body ? JSON.stringify(body) : undefined,
   });
-  if (!r.ok) throw new Error((await r.json()).error || r.statusText);
+  if (!r.ok) return parseErr(r);
   return r.json();
 }
 
@@ -90,8 +103,13 @@ export const api = {
   selectRate: (id: string, selected_rate_change: number, comment: string) =>
     send('POST', `/scenarios/${id}/select-rate`, { selected_rate_change, comment }),
   submit: (id: string) => send('POST', `/scenarios/${id}/submit`),
-  review: (id: string, decision: 'approve' | 'reject', note: string) =>
-    send('POST', `/scenarios/${id}/review`, { decision, note }),
+  review: (id: string, decision: 'approve' | 'reject', note: string, approver_role?: string) =>
+    send<{ status: string }>('POST', `/scenarios/${id}/review`, { decision, note, approver_role }),
+  aiMode: () => get<{ mode: string }>('/ai-mode'),
+  setAiMode: (mode: string) => send<{ mode: string }>('POST', '/ai-mode', { mode }),
+  reset: () => send<{ reset: boolean; removed_scenarios: number }>('POST', '/admin/reset', {}),
+  genieAsk: (question: string, conversation_id?: string) =>
+    send<GenieAnswer>('POST', '/genie/ask', { question, conversation_id }),
   compare: (ids: string[]) => get<{ scenarios: ScenarioDetail[]; assumption_order: string[]; assumption_meta: Record<string, AssumptionMeta> }>(`/compare?ids=${ids.join(',')}`),
   audit: (scenario_id: string) => get<{ events: AuditEvent[] }>(`/audit?scenario_id=${scenario_id}`),
   explain: (body: any) => send<{ ok: boolean; answer: string; source: string }>('POST', '/explain', body),

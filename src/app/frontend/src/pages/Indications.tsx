@@ -2,11 +2,12 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Sparkles, RotateCcw, Save } from 'lucide-react';
 import { api, Result, Step, ScenarioDetail } from '../lib/api';
-import { useMeta, Spin, Explainer, Waterfall } from '../components/common';
+import { useMeta, useAiMode, Spin, Explainer, Waterfall } from '../components/common';
 import { pct, pts, money, toDisplay, fromDisplay, unitSuffix, signClass, arrow } from '../lib/format';
 
 export default function Indications() {
   const meta = useMeta()!;
+  const { mode: aiMode } = useAiMode();
   const nav = useNavigate();
   const [sp, setSp] = useSearchParams();
   const lob = sp.get('lob') || 'GENERAL_LIABILITY';
@@ -60,7 +61,7 @@ export default function Indications() {
     api.explain({ payload: {
       segment: `${base.scenario.lob_code} / ${base.scenario.territory_code}`, period,
       result: cur, baseline_indicated: baseRes.indicated_rate_change, decomposition: preview?.decomposition ?? [],
-    }, mode: meta.ai_mode })
+    }, mode: aiMode })
       .then(r => setExplain({ answer: r.answer, source: r.source }))
       .finally(() => setExplaining(false));
   };

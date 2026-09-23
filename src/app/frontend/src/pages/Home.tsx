@@ -18,6 +18,16 @@ export default function Home() {
         <div className="meta">{meta.entity_name} · European commercial P&amp;C · a governed workflow from experience to an approved rate</div>
       </div>
 
+      {p && (
+        <div className="banner">
+          <strong>Why this matters.</strong> On this book (~{money(p.total_premium, p.currency)} on-level premium),
+          the portfolio indicates <strong>{pct(p.portfolio_indicated)}</strong> — about{' '}
+          <strong>{money(Math.abs(p.portfolio_indicated * p.total_premium), p.currency)}</strong> of rate movement
+          under review. Repricing slowly, by spreadsheet and email, leaves underpriced segments unaddressed between
+          cycles and is hard to audit. This decides it in one governed place — and layers on your existing tools.
+        </div>
+      )}
+
       <div className="banner">
         <strong>About this demo.</strong> {disclaimerLong(meta.entity_name).replace('About this demo. ', '')}
       </div>
