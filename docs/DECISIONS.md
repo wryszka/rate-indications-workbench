@@ -10,8 +10,8 @@ Reverse-chronological. Each entry: what was decided and why.
   keeps the Pricing Workbench's recorded demo clean. This is the "strong architectural
   reason" the original brief allowed for not extending Pricing.
 - **Default book = European commercial P&C**, built config-driven (`book_flavour`) so US
-  Retail (the brief's Prof Liability / GL / BOP) swaps in. User steer: "repeatable demo,
-  not a one-off Hiscox US thing."
+  Retail (the brief's Prof Liability / GL / BOP) swaps in. User steer: a repeatable demo,
+  not a one-off for a single client.
 - **All calculations recorded and audited; mechanics not (permanently) in the app** (user
   steer). Every committed calc writes an immutable `indication_results` row + append-only
   `indication_audit_log` event with `calc_version` + `experience_version`, attributed to
