@@ -1,10 +1,11 @@
 import { createContext, useContext, useEffect, useState } from 'react';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Sparkles } from 'lucide-react';
 import { api, Meta, Step, AgentResult } from '@/lib/api';
 import { pts } from '@/lib/format';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 // ---- meta context (loaded once) ----
 const MetaCtx = createContext<Meta | null>(null);
@@ -35,10 +36,11 @@ export function SourceChip({ source }: { source: string }) {
   return <Badge variant={v as any}>{source}</Badge>;
 }
 
-// ---- advise-only agent action: a button that runs an agent and shows its answer ----
-export function AgentAction({ label, icon, run, extra, variant = 'outline' }: {
-  label: string; icon?: React.ReactNode; run: () => Promise<AgentResult>;
-  extra?: (r: AgentResult) => React.ReactNode; variant?: any;
+// ---- shared advise-only AGENT card: an obvious "AI assistant" affordance used everywhere
+// (Indications, Review, Scenarios, Governance) so the agents read as a feature, not a stray button.
+export function AgentAction({ title, subtitle, label, icon, run, extra, variant = 'secondary', note, children }: {
+  title?: string; subtitle?: string; label: string; icon?: React.ReactNode; run: () => Promise<AgentResult>;
+  extra?: (r: AgentResult) => React.ReactNode; variant?: any; note?: string; children?: React.ReactNode;
 }) {
   const [busy, setBusy] = useState(false);
   const [r, setR] = useState<AgentResult | null>(null);
@@ -47,21 +49,33 @@ export function AgentAction({ label, icon, run, extra, variant = 'outline' }: {
     setBusy(true); setErr('');
     try { setR(await run()); } catch (e: any) { setErr(e.message || 'agent failed'); } finally { setBusy(false); }
   };
-  return (
-    <div className="space-y-2">
-      <Button variant={variant} size="sm" onClick={go} disabled={busy}>{icon}{label}{busy && <Spin />}</Button>
+  const adviseNote = note || 'Advise-only — the deterministic engine computes the numbers; you decide.';
+  const body = (
+    <>
+      <Button variant={variant} size="sm" onClick={go} disabled={busy}>{icon ?? <Sparkles className="h-4 w-4" />}{label}{busy && <Spin />}</Button>
       {err && <div className="text-sm text-destructive">{err}</div>}
       {r && (
-        <div className="space-y-2 rounded-md border bg-muted/40 p-3 text-sm">
-          <div className="flex items-center gap-2">
-            <SourceChip source={r.source} />
-            <span className="text-[11px] text-muted-foreground">advise-only — the deterministic engine computes the numbers</span>
-          </div>
+        <div className="space-y-2 rounded-md border bg-background p-3 text-sm">
+          <div className="flex items-center gap-2"><SourceChip source={r.source} />
+            <span className="text-[11px] text-muted-foreground">{adviseNote}</span></div>
           <p className="whitespace-pre-wrap">{r.answer}</p>
           {extra?.(r)}
         </div>
       )}
-    </div>
+    </>
+  );
+  if (!title) return <div className="space-y-2">{body}</div>;
+  return (
+    <Card className="border-primary/25 bg-primary/[0.03]">
+      <CardHeader className="pb-2">
+        <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-primary">
+          <Sparkles className="h-3.5 w-3.5" /> AI assistant
+        </div>
+        <CardTitle className="text-sm leading-snug">{title}</CardTitle>
+        {subtitle && <p className="text-xs text-muted-foreground">{subtitle}</p>}
+      </CardHeader>
+      <CardContent className="space-y-2">{children}{body}</CardContent>
+    </Card>
   );
 }
 

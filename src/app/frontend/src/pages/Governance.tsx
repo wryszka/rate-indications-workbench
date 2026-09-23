@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ShieldCheck, ShieldAlert, FileClock, RefreshCw, Scale, GitCompare, ListChecks, HelpCircle } from 'lucide-react';
+import { ShieldCheck, ShieldAlert, FileClock, RefreshCw, Scale, GitCompare, ListChecks, HelpCircle, Sparkles } from 'lucide-react';
 import { api, GovernanceOverview, GovQuestion, AgentResult } from '@/lib/api';
 import { useMeta, useAiMode, Spin, SourceChip, Explainer } from '@/components/common';
 import { GenieBox } from '@/components/genie-box';
@@ -12,27 +12,60 @@ import { Input } from '@/components/ui/input';
 
 // A single "scary governance question" the process owner asks — click it, get a
 // grounded answer from the live governed record (the demo centrepiece).
-function AnswerCard({ q, mode }: { q: GovQuestion; mode: string }) {
+// The specific governed evidence behind each question — shown next to the AI answer so
+// the narrative can be checked against the record, never taken on trust.
+function evidenceFor(key: string, g: GovernanceOverview): React.ReactNode {
+  const rows = (items: string[]) => <ul className="ml-4 list-disc space-y-0.5">{items.map((s, i) => <li key={i}>{s}</li>)}</ul>;
+  switch (key) {
+    case 'attribution':
+      return rows(Object.entries(g.attribution.by_action).map(([a, n]) => `${a}: ${n}`));
+    case 'reproduce':
+      return <>{`${g.reproducibility.with_snapshot}/${g.reproducibility.results_total} results carry a snapshot + hash · calc ${g.reproducibility.calc_versions.join(', ')}`}</>;
+    case 'authorisation':
+      return g.authorisation.denied_examples.length
+        ? rows(g.authorisation.denied_examples.map(d => `${d.actor} — ${d.note}`))
+        : <>No blocked attempts recorded.</>;
+    case 'sod':
+      return g.segregation_of_duties.self_approved_count
+        ? rows(g.segregation_of_duties.self_approved.map(s => s.scenario_id))
+        : <>No self-approved scenarios.</>;
+    case 'tamper':
+      return <>{`Append-only: ${g.attribution.append_only ? 'yes' : 'no'} · ${g.attribution.total_events} events, no edits/deletes`}</>;
+    case 'selected_vs_indicated':
+      return g.selected_vs_indicated.examples.length
+        ? rows(g.selected_vs_indicated.examples.map(e => `${e.segment}: selected ${pct(e.selected)} vs indicated ${pct(e.indicated)}${e.reason ? ` — ${e.reason}` : ''}`))
+        : <>No filed-vs-technical deviations.</>;
+    case 'coverage':
+      return <>{Object.entries(g.scenarios_by_status).map(([s, n]) => `${s}: ${n}`).join(' · ')}</>;
+    default:
+      return null;
+  }
+}
+
+function AnswerCard({ q, mode, g }: { q: GovQuestion; mode: string; g: GovernanceOverview }) {
   const [busy, setBusy] = useState(false);
   const [r, setR] = useState<AgentResult | null>(null);
   const ask = async () => { setBusy(true); try { setR(await api.agentGovernance(q.q, mode)); } finally { setBusy(false); } };
   return (
-    <Card className="flex flex-col">
+    <Card className="flex flex-col border-primary/25 bg-primary/[0.03]">
       <CardHeader className="pb-2">
-        <Badge variant="secondary" className="w-fit text-[10px]">{q.persona}</Badge>
+        <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-primary"><Sparkles className="h-3 w-3" /> AI · {q.persona}</div>
         <CardTitle className="text-sm leading-snug">{q.q}</CardTitle>
       </CardHeader>
       <CardContent className="mt-auto space-y-2">
-        <Button variant="outline" size="sm" onClick={ask} disabled={busy}>
+        <Button variant="secondary" size="sm" onClick={ask} disabled={busy}>
           <HelpCircle className="h-4 w-4" />Answer from the record{busy && <Spin />}
         </Button>
         {r && (
-          <div className="space-y-1 rounded-md border bg-muted/40 p-3 text-sm">
+          <div className="space-y-2 rounded-md border bg-background p-3 text-sm">
             <div className="flex items-center gap-2">
               <SourceChip source={r.source} />
               <span className="text-[11px] text-muted-foreground">advise-only — reporting the governed record</span>
             </div>
             <p className="whitespace-pre-wrap">{r.answer}</p>
+            <div className="rounded border-l-2 border-primary/40 bg-muted/50 p-2 text-xs text-muted-foreground">
+              <span className="font-semibold text-foreground">Evidence from the record:</span> {evidenceFor(q.key, g)}
+            </div>
           </div>
         )}
       </CardContent>
@@ -132,7 +165,7 @@ export default function Governance() {
         <h2 className="mb-1 flex items-center gap-2 text-lg font-semibold"><ShieldCheck className="h-5 w-5" />Ask the hard questions</h2>
         <p className="mb-3 text-sm text-muted-foreground">The questions the process owner is accountable for — each answered from the live governed record.</p>
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {g.questions.map(qq => <AnswerCard key={qq.key} q={qq} mode={mode} />)}
+          {g.questions.map(qq => <AnswerCard key={qq.key} q={qq} mode={mode} g={g} />)}
         </div>
       </div>
 

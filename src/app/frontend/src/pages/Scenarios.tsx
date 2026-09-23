@@ -152,9 +152,13 @@ function ScenarioEditor({ id, onClose, onChanged }: { id: string; onClose: () =>
       {stale && <div className="flex items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning">⚠ {stale}{' '}— recalculate before submitting.</div>}
 
       {d.result && (
-        <div className="flex flex-wrap gap-2">
-          <AgentAction label="Review this scenario" icon={<ClipboardCheck className="h-4 w-4" />} run={() => api.agentReview(id, mode)} />
-          <AgentAction label="Draft committee paper" icon={<FileText className="h-4 w-4" />} run={() => api.agentCommitteePaper(id, mode)}
+        <div className="grid gap-3 sm:grid-cols-2">
+          <AgentAction title="Peer-review before sign-off"
+            subtitle="Flags trend, credibility, method or indicated-vs-selected concerns."
+            label="Review this scenario" icon={<ClipboardCheck className="h-4 w-4" />} run={() => api.agentReview(id, mode)} />
+          <AgentAction title="Draft the committee paper"
+            subtitle="A plain-English memo from the recorded result."
+            label="Draft committee paper" icon={<FileText className="h-4 w-4" />} run={() => api.agentCommitteePaper(id, mode)}
             extra={r => <Button size="sm" variant="ghost" onClick={() => navigator.clipboard?.writeText(r.answer)}><Copy className="h-3.5 w-3.5" /> Copy</Button>} />
         </div>
       )}

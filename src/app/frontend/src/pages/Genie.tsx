@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { Send } from 'lucide-react';
 import { api, GenieAnswer } from '@/lib/api';
-import { Spin, Explainer } from '@/components/common';
+import { Spin, Explainer, useMeta } from '@/components/common';
+import { disclaimerLong } from '@/lib/brand';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -19,6 +20,7 @@ const SUGGESTIONS = [
 const isNum = (v: any) => v !== null && v !== '' && !isNaN(Number(v));
 
 export default function Genie() {
+  const meta = useMeta()!;
   const [q, setQ] = useState('');
   const [turns, setTurns] = useState<Turn[]>([]);
   const [busy, setBusy] = useState(false);
@@ -95,6 +97,11 @@ export default function Genie() {
           )}
         </CardContent></Card>
       ))}
+
+      <p className="pt-2 text-xs text-muted-foreground">
+        <span className="font-semibold">About this demo. </span>
+        {disclaimerLong(meta.entity_name).replace('About this demo. ', '')}
+      </p>
     </div>
   );
 }

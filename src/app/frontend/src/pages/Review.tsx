@@ -132,10 +132,14 @@ function AuditTrail({ id }: { id: string }) {
   return (
     <div className="space-y-3">
       {detail?.result && (
-        <div className="flex flex-wrap gap-2">
-          <AgentAction label="Review this scenario" icon={<ClipboardCheck className="h-4 w-4" />}
+        <div className="grid gap-3 sm:grid-cols-2">
+          <AgentAction title="Peer-review before sign-off"
+            subtitle="Flags anything worth a second look — trend, credibility, method, indicated-vs-selected."
+            label="Review this scenario" icon={<ClipboardCheck className="h-4 w-4" />}
             run={() => api.agentReview(id, mode)} />
-          <AgentAction label="Draft committee paper" icon={<FileText className="h-4 w-4" />}
+          <AgentAction title="Draft the committee paper"
+            subtitle="A plain-English memo from the recorded result — narrates the numbers, invents nothing."
+            label="Draft committee paper" icon={<FileText className="h-4 w-4" />}
             run={() => api.agentCommitteePaper(id, mode)}
             extra={r => (
               <Button size="sm" variant="ghost" onClick={() => navigator.clipboard?.writeText(r.answer)}>

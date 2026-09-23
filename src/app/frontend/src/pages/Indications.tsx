@@ -5,6 +5,7 @@ import { api, ApiError, Result, Step, ScenarioDetail, RateContext, PremiumSettin
 import { useMeta, useAiMode, Spin, Explainer, Waterfall, AgentAction, SourceChip } from '@/components/common';
 import { GenieBox } from '@/components/genie-box';
 import { pct, pts, money, toDisplay, fromDisplay, unitSuffix, signClass, arrow } from '@/lib/format';
+import { disclaimerLong } from '@/lib/brand';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -43,8 +44,9 @@ function OnLevelQA({ lob, territory, period, mode }: { lob: string; territory: s
     catch { setR({ answer: 'Could not answer that one.', source: 'fallback' }); } finally { setBusy(false); }
   };
   return (
-    <div className="rounded-md border p-3">
-      <div className="mb-2 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">Ask about the on-level</div>
+    <div className="rounded-md border border-primary/25 bg-primary/[0.03] p-3">
+      <div className="mb-2 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-primary">
+        <Sparkles className="h-3.5 w-3.5" /> AI assistant · Ask about the on-level</div>
       <div className="flex gap-2">
         <Input value={q} placeholder="e.g. why is the factor above 1 this year?" className="h-8"
           onChange={e => setQ(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') ask(); }} />
@@ -296,12 +298,14 @@ export default function Indications() {
           <span className="text-xs font-semibold uppercase tracking-wide text-primary">Use case · Rate indication</span>
           <span className="text-xs text-muted-foreground">— the price-change recommendation built from the on-level experience.</span>
         </div>
-        <AgentAction label="Suggest assumptions" icon={<Wand2 className="h-4 w-4" />}
+        <AgentAction title="Suggest a starting assumption set"
+          subtitle="Proposes a draft from the segment's experience — a starting point, not a decision."
+          label="Suggest assumptions" icon={<Wand2 className="h-4 w-4" />}
           run={() => api.agentRecommend(lob, territory, period, aiMode)}
           extra={r => Object.keys(r.suggested ?? {}).length > 0 && (
-            <div className="flex items-center gap-2 border-t pt-2">
+            <div className="flex flex-wrap items-center gap-2 border-t pt-2">
               <Button size="sm" onClick={() => setAssum(a => ({ ...a, ...(r.suggested as Record<string, number>) }))}>Apply as draft</Button>
-              <span className="text-[11px] text-muted-foreground">AI draft — the engine computes, you edit &amp; decide. Not saved or submitted.</span>
+              <span className="text-[11px] text-muted-foreground">AI draft for inspiration — validate every assumption before use; the engine computes, you edit &amp; decide. Not saved or submitted.</span>
             </div>
           )} />
       </div>
@@ -428,6 +432,11 @@ export default function Indications() {
             `How does ${terrLabel} compare with other territories for ${prodLabel}?`,
           ]} />
       )}
+
+      <p className="pt-2 text-xs text-muted-foreground">
+        <span className="font-semibold">About this demo. </span>
+        {disclaimerLong(meta.entity_name).replace('About this demo. ', '')}
+      </p>
 
       <Dialog open={saveOpen} onOpenChange={setSaveOpen}>
         <DialogContent>
