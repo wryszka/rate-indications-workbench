@@ -139,5 +139,42 @@ for tbl, cols in _migrations.items():
 print("On-level migration applied (additive).")
 
 # COMMAND ----------
+# ---- Governed UC functions: the agent tool/compute surface (Databricks-native, lineage-tracked) ----
+# A deterministic calc primitive + read tools over the recorded results and governance evidence.
+# The Mosaic AI Agent-Framework agent calls these as tools (MCP-first), so computation and the
+# tool surface are UC objects, not app code.
+spark.sql(f"""CREATE OR REPLACE FUNCTION {FQ}.fn_permissible_loss_ratio(
+  expense_ratio DOUBLE, commission_ratio DOUBLE, reinsurance_load DOUBLE, profit_provision DOUBLE)
+  RETURNS DOUBLE
+  COMMENT 'Break-even (permissible) loss ratio = 1 - (expense+commission+reinsurance+profit). Deterministic calc primitive.'
+  RETURN 1.0 - (expense_ratio + commission_ratio + reinsurance_load + profit_provision)""")
+
+spark.sql(f"""CREATE OR REPLACE FUNCTION {FQ}.fn_segment_indication(p_lob STRING, p_territory STRING, p_period INT)
+  RETURNS TABLE(lob_code STRING, territory_code STRING, scenario_name STRING, status STRING, is_baseline BOOLEAN,
+                indicated_rate_change DOUBLE, projected_loss_ratio DOUBLE, on_level_reported_lr DOUBLE,
+                on_level_method STRING, calc_version STRING, experience_version STRING)
+  COMMENT 'Latest recorded indication + premium basis for a product/territory/period. Agent read tool over governed results.'
+  RETURN SELECT s.lob_code, s.territory_code, s.scenario_name, s.status, s.is_baseline,
+                r.indicated_rate_change, r.projected_loss_ratio,
+                r.premium_summary_json:on_level_reported_loss_ratio::double, r.premium_summary_json:method::string,
+                r.calc_version, r.experience_version
+         FROM {FQ}.indication_scenarios s
+         JOIN (SELECT *, row_number() OVER (PARTITION BY scenario_id ORDER BY calculation_timestamp DESC) rn
+               FROM {FQ}.indication_results) r ON r.scenario_id=s.scenario_id AND r.rn=1
+         WHERE s.lob_code=p_lob AND s.territory_code=p_territory AND s.indication_period=p_period""")
+
+spark.sql(f"""CREATE OR REPLACE FUNCTION {FQ}.fn_governance_evidence()
+  RETURNS TABLE(total_audit_events BIGINT, blocked_approvals BIGINT, results_total BIGINT,
+                results_with_snapshot BIGINT, calc_versions STRING, approved_baselines BIGINT)
+  COMMENT 'Live governance evidence for oversight questions (attribution, authorisation, reproducibility).'
+  RETURN SELECT (SELECT count(*) FROM {FQ}.indication_audit_log),
+                (SELECT count(*) FROM {FQ}.indication_audit_log WHERE action='APPROVE_DENIED'),
+                (SELECT count(*) FROM {FQ}.indication_results),
+                (SELECT count(input_hash) FROM {FQ}.indication_results),
+                (SELECT concat_ws(',', array_agg(DISTINCT calc_version)) FROM {FQ}.indication_results),
+                (SELECT count(*) FROM {FQ}.indication_scenarios WHERE is_baseline AND status='APPROVED')""")
+print("Governed UC functions created (agent tool surface).")
+
+# COMMAND ----------
 print("Setup complete. Tables:")
 display(spark.sql(f"SHOW TABLES IN {FQ}"))
