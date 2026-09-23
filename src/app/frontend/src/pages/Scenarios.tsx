@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { ClipboardCheck, FileText, Copy } from 'lucide-react';
 import { api, ApiError, Scenario, ScenarioDetail } from '@/lib/api';
-import { useMeta, Spin, Explainer } from '@/components/common';
+import { useMeta, useAiMode, Spin, Explainer, AgentAction } from '@/components/common';
 import { pct, toDisplay, fromDisplay, unitSuffix } from '@/lib/format';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -113,6 +114,7 @@ function Compare({ cmp }: { cmp: { scenarios: ScenarioDetail[]; assumption_order
 }
 
 function ScenarioEditor({ id, onClose, onChanged }: { id: string; onClose: () => void; onChanged: () => void }) {
+  const { mode } = useAiMode();
   const [d, setD] = useState<ScenarioDetail | null>(null);
   const [assum, setAssum] = useState<Record<string, number>>({});
   const [busy, setBusy] = useState('');
@@ -148,6 +150,14 @@ function ScenarioEditor({ id, onClose, onChanged }: { id: string; onClose: () =>
         {d.result && <a href={api.exportUrl(id)} className="ml-auto"><Button size="sm" variant="outline">Export CSV</Button></a>}
       </div>
       {stale && <div className="flex items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning">⚠ {stale}{' '}— recalculate before submitting.</div>}
+
+      {d.result && (
+        <div className="flex flex-wrap gap-2">
+          <AgentAction label="Review this scenario" icon={<ClipboardCheck className="h-4 w-4" />} run={() => api.agentReview(id, mode)} />
+          <AgentAction label="Draft committee paper" icon={<FileText className="h-4 w-4" />} run={() => api.agentCommitteePaper(id, mode)}
+            extra={r => <Button size="sm" variant="ghost" onClick={() => navigator.clipboard?.writeText(r.answer)}><Copy className="h-3.5 w-3.5" /> Copy</Button>} />
+        </div>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-2">
         <div>

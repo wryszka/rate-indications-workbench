@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { AlertTriangle, ShieldCheck } from 'lucide-react';
+import { AlertTriangle, ShieldCheck, ClipboardCheck, FileText, Copy } from 'lucide-react';
 import { api, ApiError, Scenario, AuditEvent, ScenarioDetail } from '@/lib/api';
-import { useMeta, Spin, Explainer } from '@/components/common';
+import { useMeta, useAiMode, Spin, Explainer, AgentAction } from '@/components/common';
+import { GenieBox } from '@/components/genie-box';
 import { pct } from '@/lib/format';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -111,17 +112,38 @@ export default function Review() {
         </div>
         {openAudit && <AuditTrail id={openAudit} />}
       </CardContent></Card>
+
+      {meta.genie_enabled && (
+        <GenieBox suggestions={[
+          'Which submitted scenarios have the largest indicated change?',
+          'Show the approved baseline indication by product',
+        ]} />
+      )}
     </div>
   );
 }
 
 function AuditTrail({ id }: { id: string }) {
+  const { mode } = useAiMode();
   const [events, setEvents] = useState<AuditEvent[] | null>(null);
   const [detail, setDetail] = useState<ScenarioDetail | null>(null);
   useEffect(() => { api.audit(id).then(d => setEvents(d.events)); api.scenario(id).then(setDetail); }, [id]);
   if (!events) return <Spin />;
   return (
     <div className="space-y-3">
+      {detail?.result && (
+        <div className="flex flex-wrap gap-2">
+          <AgentAction label="Review this scenario" icon={<ClipboardCheck className="h-4 w-4" />}
+            run={() => api.agentReview(id, mode)} />
+          <AgentAction label="Draft committee paper" icon={<FileText className="h-4 w-4" />}
+            run={() => api.agentCommitteePaper(id, mode)}
+            extra={r => (
+              <Button size="sm" variant="ghost" onClick={() => navigator.clipboard?.writeText(r.answer)}>
+                <Copy className="h-3.5 w-3.5" /> Copy
+              </Button>
+            )} />
+        </div>
+      )}
       {detail?.result && (
         <div className="flex items-start gap-2 rounded-md border bg-muted/40 p-3 text-sm">
           <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-success" />

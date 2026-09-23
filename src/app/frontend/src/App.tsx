@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { NavLink, Route, Routes, useLocation } from 'react-router-dom';
 import {
   Home as HomeIcon, LayoutGrid, TrendingUp, GitCompare, CheckCircle2, BookOpen,
-  MessageCircleQuestion, Zap, RotateCcw, Menu, X,
+  MessageCircleQuestion, Zap, RotateCcw, Menu, X, ShieldCheck,
 } from 'lucide-react';
 import { MetaProvider, useMeta, useAiMode } from '@/components/common';
 import { ThemeProvider, ThemeToggle } from '@/components/theme';
@@ -14,6 +14,7 @@ import Portfolio from '@/pages/Portfolio';
 import Indications from '@/pages/Indications';
 import Scenarios from '@/pages/Scenarios';
 import Review from '@/pages/Review';
+import Governance from '@/pages/Governance';
 import Learn from '@/pages/Learn';
 import Genie from '@/pages/Genie';
 
@@ -23,7 +24,7 @@ const NAV = [
   { to: '/indications', label: 'Rate Indications', icon: TrendingUp },
   { to: '/scenarios', label: 'Scenarios', icon: GitCompare },
   { to: '/review', label: 'Review & Approve', icon: CheckCircle2 },
-  { to: '/learn', label: 'Learn', icon: BookOpen },
+  { to: '/governance', label: 'Governance', icon: ShieldCheck },
 ];
 
 function AiToggle() {
@@ -101,6 +102,14 @@ function Sidebar({ onNav }: { onNav?: () => void }) {
         )}
       </nav>
       <div className="border-t p-3">
+        {/* Learn sits at the foot, matching the other estate apps */}
+        <NavLink to="/learn" onClick={onNav}
+          className={({ isActive }) => cn(
+            'mb-2 flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+            isActive ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+          )}>
+          <BookOpen className="h-4 w-4" />Learn — how it works
+        </NavLink>
         <AiToggle />
         <ResetButton />
         <div className="mt-3 text-[11px] text-muted-foreground">
@@ -114,7 +123,7 @@ function Sidebar({ onNav }: { onNav?: () => void }) {
 
 const TITLES: Record<string, string> = {
   '/': 'Home', '/portfolio': 'Portfolio', '/indications': 'Rate Indications',
-  '/scenarios': 'Scenarios', '/review': 'Review & Approve', '/learn': 'Learn', '/ask': 'Ask the book',
+  '/scenarios': 'Scenarios', '/review': 'Review & Approve', '/governance': 'Governance', '/learn': 'Learn', '/ask': 'Ask the book',
 };
 
 function Shell() {
@@ -148,6 +157,7 @@ function Shell() {
             <Route path="/indications" element={<Indications />} />
             <Route path="/scenarios" element={<Scenarios />} />
             <Route path="/review" element={<Review />} />
+            <Route path="/governance" element={<Governance />} />
             <Route path="/learn" element={<Learn />} />
             <Route path="/ask" element={<Genie />} />
           </Routes>

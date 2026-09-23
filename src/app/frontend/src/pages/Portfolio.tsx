@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, Portfolio as P } from '@/lib/api';
 import { useMeta, Spin, Explainer } from '@/components/common';
+import { GenieBox } from '@/components/genie-box';
 import { pct, money, arrow, signClass } from '@/lib/format';
 import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
@@ -90,6 +91,13 @@ export default function Portfolio() {
             </Table>
           </CardContent>
         </Card>
+
+        {meta.genie_enabled && (
+          <GenieBox suggestions={[
+            'Which segments have the largest indicated rate increase?',
+            'Which products need a rate decrease?',
+          ]} />
+        )}
       </>}
     </div>
   );

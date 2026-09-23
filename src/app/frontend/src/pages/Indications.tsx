@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Sparkles, RotateCcw, Save, AlertTriangle } from 'lucide-react';
+import { Sparkles, RotateCcw, Save, AlertTriangle, Wand2, Send } from 'lucide-react';
 import { api, ApiError, Result, Step, ScenarioDetail, RateContext, PremiumSettings, PremiumSummary, RateEventRow } from '@/lib/api';
-import { useMeta, useAiMode, Spin, Explainer, Waterfall } from '@/components/common';
+import { useMeta, useAiMode, Spin, Explainer, Waterfall, AgentAction, SourceChip } from '@/components/common';
+import { GenieBox } from '@/components/genie-box';
 import { pct, pts, money, toDisplay, fromDisplay, unitSuffix, signClass, arrow } from '@/lib/format';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -27,6 +28,36 @@ function Kpi({ label, value, tone, busy, sub }: { label: string; value: string; 
       <div className={cn('mt-1 flex items-center gap-2 text-2xl font-extrabold tnum', tone)}>{value}{busy && <Spin />}</div>
       {sub && <div className="mt-0.5 text-xs text-muted-foreground">{sub}</div>}
     </CardContent></Card>
+  );
+}
+
+// Advise-only Q&A over the earning-aware on-level detail (UC2 counterpart to Explain).
+function OnLevelQA({ lob, territory, period, mode }: { lob: string; territory: string; period: number; mode: string }) {
+  const [q, setQ] = useState('');
+  const [r, setR] = useState<{ answer: string; source: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const ask = async () => {
+    if (!q.trim() || busy) return;
+    setBusy(true);
+    try { const a = await api.agentInterrogate(lob, territory, period, q, mode); setR({ answer: a.answer, source: a.source }); }
+    catch { setR({ answer: 'Could not answer that one.', source: 'fallback' }); } finally { setBusy(false); }
+  };
+  return (
+    <div className="rounded-md border p-3">
+      <div className="mb-2 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">Ask about the on-level</div>
+      <div className="flex gap-2">
+        <Input value={q} placeholder="e.g. why is the factor above 1 this year?" className="h-8"
+          onChange={e => setQ(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') ask(); }} />
+        <Button size="sm" variant="outline" onClick={ask} disabled={busy || !q.trim()}><Send className="h-4 w-4" /> Ask {busy && <Spin />}</Button>
+      </div>
+      {r && (
+        <div className="mt-2 flex items-start gap-2 text-sm">
+          <SourceChip source={r.source} />
+          <p className="text-muted-foreground">{r.answer}</p>
+        </div>
+      )}
+      <p className="mt-1 text-[11px] text-muted-foreground">Advise-only — explains the figures, doesn't compute them.</p>
+    </div>
   );
 }
 
@@ -189,7 +220,7 @@ export default function Indications() {
         <CardContent className="space-y-4 p-4">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
-              <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">On-level earned premium</div>
+              <div className="text-xs font-semibold uppercase tracking-wide text-primary">Use case · On-level earned premium</div>
               <p className="mt-1 max-w-[70ch] text-sm text-muted-foreground">
                 Restates historic earned premium to the reference rate level ({rateCtx.reference_rate_date}), so premium and
                 losses are comparable. <span className="font-medium">{methodLabel(method)}</span>{' '}
@@ -255,8 +286,25 @@ export default function Indications() {
               <p className="mt-1 text-xs text-muted-foreground">Edits are scenario-local — they never change the master history or the approved baseline.</p>
             </div>
           </div>
+
+          <OnLevelQA lob={lob} territory={territory} period={period} mode={aiMode} />
         </CardContent>
       </Card>
+
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-baseline gap-2">
+          <span className="text-xs font-semibold uppercase tracking-wide text-primary">Use case · Rate indication</span>
+          <span className="text-xs text-muted-foreground">— the price-change recommendation built from the on-level experience.</span>
+        </div>
+        <AgentAction label="Suggest assumptions" icon={<Wand2 className="h-4 w-4" />}
+          run={() => api.agentRecommend(lob, territory, period, aiMode)}
+          extra={r => Object.keys(r.suggested ?? {}).length > 0 && (
+            <div className="flex items-center gap-2 border-t pt-2">
+              <Button size="sm" onClick={() => setAssum(a => ({ ...a, ...(r.suggested as Record<string, number>) }))}>Apply as draft</Button>
+              <span className="text-[11px] text-muted-foreground">AI draft — the engine computes, you edit &amp; decide. Not saved or submitted.</span>
+            </div>
+          )} />
+      </div>
 
       <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
         <Kpi label="Current rate level" value={(baseRes.current_rate_level ?? 1).toFixed(3)} />
@@ -371,6 +419,15 @@ export default function Indications() {
           </Accordion>
         </CardContent>
       </Card>
+
+      {meta.genie_enabled && (
+        <GenieBox
+          placeholder={`Ask about ${prodLabel} in ${terrLabel}…`}
+          suggestions={[
+            `Show earned premium and loss ratio for ${prodLabel} in ${terrLabel}`,
+            `How does ${terrLabel} compare with other territories for ${prodLabel}?`,
+          ]} />
+      )}
 
       <Dialog open={saveOpen} onOpenChange={setSaveOpen}>
         <DialogContent>

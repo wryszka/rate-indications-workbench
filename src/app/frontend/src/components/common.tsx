@@ -1,8 +1,10 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { Loader2 } from 'lucide-react';
-import { api, Meta, Step } from '@/lib/api';
+import { api, Meta, Step, AgentResult } from '@/lib/api';
 import { pts } from '@/lib/format';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 
 // ---- meta context (loaded once) ----
 const MetaCtx = createContext<Meta | null>(null);
@@ -26,6 +28,42 @@ export function MetaProvider({ children }: { children: React.ReactNode }) {
 }
 
 export const Spin = () => <Loader2 className="inline h-4 w-4 animate-spin text-muted-foreground" aria-label="loading" />;
+
+// ---- AI source chip (live / cached / fallback) ----
+export function SourceChip({ source }: { source: string }) {
+  const v = source === 'live' ? 'success' : source === 'fallback' ? 'outline' : 'secondary';
+  return <Badge variant={v as any}>{source}</Badge>;
+}
+
+// ---- advise-only agent action: a button that runs an agent and shows its answer ----
+export function AgentAction({ label, icon, run, extra, variant = 'outline' }: {
+  label: string; icon?: React.ReactNode; run: () => Promise<AgentResult>;
+  extra?: (r: AgentResult) => React.ReactNode; variant?: any;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [r, setR] = useState<AgentResult | null>(null);
+  const [err, setErr] = useState('');
+  const go = async () => {
+    setBusy(true); setErr('');
+    try { setR(await run()); } catch (e: any) { setErr(e.message || 'agent failed'); } finally { setBusy(false); }
+  };
+  return (
+    <div className="space-y-2">
+      <Button variant={variant} size="sm" onClick={go} disabled={busy}>{icon}{label}{busy && <Spin />}</Button>
+      {err && <div className="text-sm text-destructive">{err}</div>}
+      {r && (
+        <div className="space-y-2 rounded-md border bg-muted/40 p-3 text-sm">
+          <div className="flex items-center gap-2">
+            <SourceChip source={r.source} />
+            <span className="text-[11px] text-muted-foreground">advise-only — the deterministic engine computes the numbers</span>
+          </div>
+          <p className="whitespace-pre-wrap">{r.answer}</p>
+          {extra?.(r)}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ---- "What am I seeing?" explainer (no platform words) ----
 export function Explainer({ title = 'What am I seeing?', children }: { title?: string; children: React.ReactNode }) {

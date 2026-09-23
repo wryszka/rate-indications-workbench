@@ -88,7 +88,21 @@ export type AuditEvent = {
   log_ts: string; action: string; actor: string; from_status: string | null;
   to_status: string | null; calc_version: string; result_id: string | null; note: string | null;
 };
-export type LearnCard = { n: number; group: string; activity: string; how: string; links: { label: string; kind: string }[] };
+export type LearnCard = { use_case: string; n: number; group: string; activity: string; how: string; links: { label: string; kind: string }[] };
+export type AgentResult = { ok: boolean; answer: string; source: string; persona: string; suggested?: Record<string, number> };
+
+export type GovQuestion = { key: string; persona: string; q: string };
+export type GovernanceOverview = {
+  period: number | null;
+  attribution: { by_action: Record<string, number>; total_events: number; append_only: boolean };
+  authorisation: { denied_attempts: number; denied_examples: { scenario_id: string; actor: string; note: string; at: string }[] };
+  segregation_of_duties: { self_approved_count: number; self_approved: { scenario_id: string; owner: string }[] };
+  reproducibility: { results_total: number; with_snapshot: number; pct: number; calc_versions: string[] };
+  selected_vs_indicated: { deviations: number; with_reason: number; examples: { segment: string; selected: number; indicated: number; reason: string }[] };
+  scenarios_by_status: Record<string, number>;
+  coverage: { segments: number; approved_baselines: number };
+  questions: GovQuestion[];
+};
 
 export class ApiError extends Error {
   status: number; body: any;
@@ -150,4 +164,15 @@ export const api = {
   audit: (scenario_id: string) => get<{ events: AuditEvent[] }>(`/audit?scenario_id=${scenario_id}`),
   explain: (body: any) => send<{ ok: boolean; answer: string; source: string }>('POST', '/explain', body),
   learn: () => get<{ cards: LearnCard[] }>('/learn'),
+  // advise-only agents (Foundation Model) — the engine still computes the numbers
+  agentReview: (scenario_id: string, mode?: string) => send<AgentResult>('POST', '/agent/review', { scenario_id, mode }),
+  agentRecommend: (lob: string, territory: string, period: number, mode?: string) =>
+    send<AgentResult>('POST', '/agent/recommend', { lob, territory, period, mode }),
+  agentInterrogate: (lob: string, territory: string, period: number, question: string, mode?: string) =>
+    send<AgentResult>('POST', '/agent/interrogate', { lob, territory, period, question, mode }),
+  agentCommitteePaper: (scenario_id: string, mode?: string) =>
+    send<AgentResult>('POST', '/agent/committee-paper', { scenario_id, mode }),
+  getGovernance: (period?: number) => get<GovernanceOverview>(`/governance${period ? `?period=${period}` : ''}`),
+  agentGovernance: (question: string, mode?: string) =>
+    send<AgentResult>('POST', '/agent/governance', { question, mode }),
 };
