@@ -310,6 +310,23 @@ async def agent_committee_paper(body: dict):
         return fail("committee paper", e)
 
 
+@app.get("/api/governance")
+async def governance(period: int | None = None):
+    return ok(await store.governance_overview(period))
+
+
+@app.post("/api/agent/governance")
+async def agent_governance(body: dict):
+    """Advise-only governance/model-risk Q&A grounded in the live governed evidence."""
+    try:
+        ev = await store.governance_overview(body.get("period"))
+        payload = {"question": body.get("question", ""), "evidence": ev}
+        return ok(await agents.run("governance", payload, body.get("mode", config.ai_mode()),
+                                   question=body.get("question", "")))
+    except Exception as e:  # noqa: BLE001
+        return fail("governance agent", e)
+
+
 @app.post("/api/explain")
 async def explain(body: dict):
     mode = body.get("mode", config.ai_mode())

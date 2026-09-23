@@ -625,6 +625,97 @@ async def compare(ids: list[str]) -> dict[str, Any]:
     return {"scenarios": out, "assumption_order": ASSUMPTION_ORDER, "assumption_meta": ASSUMPTION_META}
 
 
+async def governance_overview(period: int | None = None) -> dict[str, Any]:
+    """Live governance evidence — the answers a Chief Actuary / Model Risk / Audit /
+    Conduct owner needs: attribution, reproducibility, authorisation + segregation of
+    duties, tamper-evidence, and selected-vs-indicated justification. Every figure is a
+    query over the governed tables."""
+    audit_by_action = await execute_query(
+        f"SELECT action, count(*) n FROM {fqn('indication_audit_log')} GROUP BY action ORDER BY action")
+    denied = await execute_query(
+        f"""SELECT scenario_id, actor, note, log_ts FROM {fqn('indication_audit_log')}
+            WHERE action='APPROVE_DENIED' ORDER BY log_ts DESC LIMIT 5""")
+    scen_by_status = await execute_query(
+        f"SELECT status, count(*) n FROM {fqn('indication_scenarios')} GROUP BY status ORDER BY status")
+    repro = await execute_query(
+        f"""SELECT count(*) total, count(input_hash) with_snapshot,
+                   count(DISTINCT calc_version) calc_versions
+            FROM {fqn('indication_results')}""")
+    # segregation of duties: an approved scenario whose owner also reviewed it
+    self_appr = await execute_query(
+        f"""SELECT scenario_id, owner FROM {fqn('indication_scenarios')}
+            WHERE status='APPROVED' AND NOT is_baseline AND owner = reviewer LIMIT 10""")
+    # selected vs indicated deviations (a filed rate that differs from the technical answer)
+    devs = await execute_query(
+        f"""SELECT s.scenario_id, s.lob_code, s.territory_code, s.selected_rate_change,
+                   r.indicated_rate_change, s.selection_comment
+            FROM {fqn('indication_scenarios')} s
+            JOIN (SELECT scenario_id, indicated_rate_change,
+                         row_number() OVER (PARTITION BY scenario_id ORDER BY calculation_timestamp DESC) rn
+                  FROM {fqn('indication_results')}) r ON r.scenario_id=s.scenario_id AND r.rn=1
+            WHERE s.selected_rate_change IS NOT NULL
+              AND abs(s.selected_rate_change - r.indicated_rate_change) > 0.0001 LIMIT 20""")
+    calc_vers = await execute_query(f"SELECT DISTINCT calc_version FROM {fqn('indication_results')} WHERE calc_version IS NOT NULL")
+    coverage = await execute_query(
+        f"""SELECT (SELECT count(*) FROM {fqn('line_of_business')}) * (SELECT count(*) FROM {fqn('territory')}) segments,
+                   (SELECT count(*) FROM {fqn('indication_scenarios')} WHERE is_baseline AND status='APPROVED') approved_baselines""")
+
+    r0 = repro[0] if repro else {}
+    cov = coverage[0] if coverage else {}
+    total_res, with_snap = _i(r0.get("total")) or 0, _i(r0.get("with_snapshot")) or 0
+    return {
+        "period": period,
+        "attribution": {  # who did what — every state change is an attributed event
+            "by_action": {a["action"]: _i(a["n"]) for a in audit_by_action},
+            "total_events": sum(_i(a["n"]) for a in audit_by_action),
+            "append_only": True,   # indication_audit_log is delta.appendOnly=true
+        },
+        "authorisation": {
+            "denied_attempts": len(denied),
+            "denied_examples": [{"scenario_id": d["scenario_id"], "actor": d["actor"],
+                                 "note": d["note"], "at": str(d["log_ts"])} for d in denied],
+        },
+        "segregation_of_duties": {
+            "self_approved_count": len(self_appr),
+            "self_approved": [{"scenario_id": s["scenario_id"], "owner": s["owner"]} for s in self_appr],
+        },
+        "reproducibility": {
+            "results_total": total_res, "with_snapshot": with_snap,
+            "pct": round(100 * with_snap / total_res, 1) if total_res else 100.0,
+            "calc_versions": [c["calc_version"] for c in calc_vers],
+        },
+        "selected_vs_indicated": {
+            "deviations": len(devs),
+            "with_reason": sum(1 for d in devs if (d.get("selection_comment") or "").strip()),
+            "examples": [{"segment": f"{d['lob_code']}/{d['territory_code']}",
+                          "selected": _f(d["selected_rate_change"]), "indicated": _f(d["indicated_rate_change"]),
+                          "reason": d["selection_comment"]} for d in devs[:8]],
+        },
+        "scenarios_by_status": {s["status"]: _i(s["n"]) for s in scen_by_status},
+        "coverage": {"segments": _i(cov.get("segments")), "approved_baselines": _i(cov.get("approved_baselines"))},
+        "questions": GOVERNANCE_QUESTIONS,
+    }
+
+
+# The scary governance questions, each answerable from the evidence above (the "ready answers").
+GOVERNANCE_QUESTIONS = [
+    {"key": "attribution", "persona": "Chief Actuary",
+     "q": "Who created or changed an assumption, and when?"},
+    {"key": "reproduce", "persona": "Model Risk",
+     "q": "Can we reproduce this exact number in two years — with the method and data version?"},
+    {"key": "authorisation", "persona": "Internal Audit",
+     "q": "Was every rate change signed off by someone senior enough — and were any unauthorised approvals attempted?"},
+    {"key": "sod", "persona": "Internal Audit",
+     "q": "Has anyone approved their own work (segregation of duties)?"},
+    {"key": "tamper", "persona": "Compliance",
+     "q": "Is the record complete and tamper-proof?"},
+    {"key": "selected_vs_indicated", "persona": "Conduct / Regulator",
+     "q": "Where does the filed (selected) rate differ from the technical (indicated) rate, and is the reason recorded?"},
+    {"key": "coverage", "persona": "CRO",
+     "q": "What's the governance status of the book — how much is approved vs outstanding?"},
+]
+
+
 async def audit_trail(scenario_id: str) -> list[dict]:
     return await execute_query(
         f"""SELECT log_ts, action, actor, from_status, to_status, calc_version, result_id, note

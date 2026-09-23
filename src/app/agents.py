@@ -40,6 +40,14 @@ _SYSTEMS = {
         "vs on-level reported loss ratios. Answer the question clearly in 2-5 sentences using ONLY "
         "the supplied numbers. Do not recompute or invent figures; if the answer isn't in the data, "
         "say what's missing."),
+    "governance": (
+        "You are a model-risk / governance officer answering an oversight question about a P&C "
+        "rate-indication process. You are given live governance evidence (attribution of every "
+        "action, an append-only audit trail, reproducibility/version coverage, authorisation + any "
+        "blocked approvals, segregation-of-duties checks, and selected-vs-indicated deviations with "
+        "reasons). Answer the question directly and factually in 2-5 sentences, citing the specific "
+        "evidence (counts, versions, examples). If the evidence shows a control gap, say so plainly. "
+        "Do not invent figures beyond what's supplied; you are reporting the governed record."),
     "committee_paper": (
         "You are drafting a concise rate-indication committee paper (filing memo) from a recorded "
         "result. Cover: the segment and period; the on-level method used; the indicated rate change "
@@ -65,6 +73,16 @@ def _fallback(persona: str, payload: dict[str, Any]) -> str:
                 "the segment's recent experience before recalculating.\n{\"suggested\": {}}")
     if persona == "interrogate":
         return "On-level restates historic premium to the reference rate level; the factor is the reference index divided by each year's average earned index."
+    if persona == "governance":
+        ev = payload.get("evidence") or {}
+        attr = ev.get("attribution") or {}
+        repro = ev.get("reproducibility") or {}
+        return (f"The record is append-only with {attr.get('total_events', 0)} attributed events; "
+                f"{repro.get('pct', 0)}% of results carry a reproducible input snapshot + hash "
+                f"(calc versions {', '.join(repro.get('calc_versions', []))}); "
+                f"{(ev.get('authorisation') or {}).get('denied_attempts', 0)} unauthorised approval(s) were blocked; "
+                f"{(ev.get('segregation_of_duties') or {}).get('self_approved_count', 0)} self-approved scenarios; "
+                f"{(ev.get('selected_vs_indicated') or {}).get('deviations', 0)} filed-vs-indicated deviations recorded.")
     return (f"Rate indication — {seg}. Indicated {r.get('indicated_rate_change', 0) * 100:+.1f}% "
             f"(method: {r.get('on_level_method', 'legacy')}). Recorded with calc version "
             f"{r.get('calc_version', '')}. See the scenario's audit trail for who and when.")
