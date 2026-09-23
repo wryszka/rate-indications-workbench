@@ -44,13 +44,29 @@ mlflow.set_experiment(exp_dir + "/experiment")
 resources = [DatabricksServingEndpoint(endpoint_name=LLM_ENDPOINT),
              *[DatabricksFunction(function_name=f) for f in UC_FUNCTIONS]]
 
+# Pin pip_requirements to the EXACT versions resolved in this (validated) %pip env.
+# Unpinned reqs make the serving image build re-resolve a huge graph from scratch — that
+# is what stalled the first container build at "Container creation pending". Pinning the
+# top-level packages (and their heavy transitive roots) collapses the resolution.
+from importlib.metadata import version as _v
+def _pin(pkg):
+    try:
+        return f"{pkg}=={_v(pkg)}"
+    except Exception:
+        return None
+_pkgs = ["mlflow", "databricks-langchain", "langchain-core", "langgraph",
+         "langgraph-checkpoint", "databricks-agents", "databricks-sdk",
+         "unitycatalog-ai", "unitycatalog-langchain", "pydantic"]
+pip_reqs = [p for p in (_pin(x) for x in _pkgs) if p]
+print("pinned pip_requirements:", pip_reqs)
+
 with mlflow.start_run(run_name="log"):
     info = mlflow.pyfunc.log_model(
         name="agent",
         python_model=agent_file,
         resources=resources,
         input_example={"input": [{"role": "user", "content": "What's the baseline indication for General Liability in Germany 2027?"}]},
-        pip_requirements=["mlflow", "databricks-langchain", "langgraph", "databricks-agents", "pydantic>=2"],
+        pip_requirements=pip_reqs,
         registered_model_name=FULL_NAME,
     )
 print("logged:", info.model_uri)

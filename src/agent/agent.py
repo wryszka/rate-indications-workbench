@@ -38,7 +38,16 @@ SYSTEM_PROMPT = (
     "fn_governance_evidence for oversight questions (audit completeness, blocked "
     "approvals, reproducibility). Quote the figures the tools return; do not invent "
     "numbers. Rates shown are decimals (0.066 = +6.6%). All data is synthetic "
-    "(fictional insurer Bricksurance SE). Be concise and plain-spoken."
+    "(fictional insurer Bricksurance SE). Be concise and plain-spoken.\n\n"
+    "SEGMENT CODES — the tools filter on exact codes, so translate the user's wording "
+    "to these before calling a tool and pass them verbatim:\n"
+    "- line of business (p_lob): GENERAL_LIABILITY, COMMERCIAL_MOTOR, COMMERCIAL_PROPERTY\n"
+    "- territory (p_territory): ISO-2 country codes DE (Germany), FR (France), "
+    "IT (Italy), ES (Spain), NL (Netherlands)\n"
+    "- period (p_period): a 4-digit year, e.g. 2027 (the current indication year)\n"
+    "Example: 'General Liability in Germany for 2027' -> p_lob=GENERAL_LIABILITY, "
+    "p_territory=DE, p_period=2027. If a tool returns no rows, re-check you used these "
+    "exact codes before telling the user there is no data."
 )
 
 
