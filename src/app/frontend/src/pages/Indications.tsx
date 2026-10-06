@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Sparkles, RotateCcw, Save, AlertTriangle, Wand2, Send } from 'lucide-react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Sparkles, RotateCcw, Save, AlertTriangle, Wand2 } from 'lucide-react';
 import { api, ApiError, Result, Step, ScenarioDetail, RateContext, PremiumSettings, PremiumSummary, RateEventRow } from '@/lib/api';
-import { useMeta, useAiMode, Spin, Explainer, Waterfall, AgentAction, SourceChip } from '@/components/common';
+import { useMeta, useAiMode, Spin, Explainer, Waterfall, AgentAction } from '@/components/common';
 import { GenieBox } from '@/components/genie-box';
 import { pct, pts, money, toDisplay, fromDisplay, unitSuffix, signClass, arrow } from '@/lib/format';
 import { disclaimerLong } from '@/lib/brand';
@@ -29,37 +29,6 @@ function Kpi({ label, value, tone, busy, sub }: { label: string; value: string; 
       <div className={cn('mt-1 flex items-center gap-2 text-2xl font-extrabold tnum', tone)}>{value}{busy && <Spin />}</div>
       {sub && <div className="mt-0.5 text-xs text-muted-foreground">{sub}</div>}
     </CardContent></Card>
-  );
-}
-
-// Advise-only Q&A over the earning-aware on-level detail (UC2 counterpart to Explain).
-function OnLevelQA({ lob, territory, period, mode }: { lob: string; territory: string; period: number; mode: string }) {
-  const [q, setQ] = useState('');
-  const [r, setR] = useState<{ answer: string; source: string } | null>(null);
-  const [busy, setBusy] = useState(false);
-  const ask = async () => {
-    if (!q.trim() || busy) return;
-    setBusy(true);
-    try { const a = await api.agentInterrogate(lob, territory, period, q, mode); setR({ answer: a.answer, source: a.source }); }
-    catch { setR({ answer: 'Could not answer that one.', source: 'fallback' }); } finally { setBusy(false); }
-  };
-  return (
-    <div className="rounded-md border border-primary/25 bg-primary/[0.03] p-3">
-      <div className="mb-2 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-primary">
-        <Sparkles className="h-3.5 w-3.5" /> AI assistant · Ask about the on-level</div>
-      <div className="flex gap-2">
-        <Input value={q} placeholder="e.g. why is the factor above 1 this year?" className="h-8"
-          onChange={e => setQ(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') ask(); }} />
-        <Button size="sm" variant="outline" onClick={ask} disabled={busy || !q.trim()}><Send className="h-4 w-4" /> Ask {busy && <Spin />}</Button>
-      </div>
-      {r && (
-        <div className="mt-2 flex items-start gap-2 text-sm">
-          <SourceChip source={r.source} />
-          <p className="text-muted-foreground">{r.answer}</p>
-        </div>
-      )}
-      <p className="mt-1 text-[11px] text-muted-foreground">Advise-only — explains the figures, doesn't compute them.</p>
-    </div>
   );
 }
 
@@ -141,7 +110,6 @@ export default function Indications() {
 
   const baseRes = base.result!;
   const cur = preview?.result ?? baseRes;
-  const summary = preview?.summary;
   const baseMethod = base.premium_settings?.method || LEGACY;
   const psDirty = method !== baseMethod || (buildSettings()?.event_overrides.length ?? 0) > 0;
   const dirty = JSON.stringify(assum) !== JSON.stringify(base.assumptions) || psDirty;
@@ -150,16 +118,6 @@ export default function Indications() {
   const metaByName = base.assumption_meta;
   const prodLabel = meta.products.find(p => p.code === lob)?.label ?? lob;
   const terrLabel = meta.territories.find(t => t.code === territory)?.label ?? territory;
-
-  const uplift = summary ? summary.total_on_level_earned_premium - summary.total_earned_premium : (cur.on_level_earned_premium - (cur.total_earned_premium ?? 0));
-  const rawLR = summary?.raw_reported_loss_ratio ?? cur.raw_reported_loss_ratio;
-  const olLR = summary?.on_level_reported_loss_ratio ?? cur.on_level_reported_loss_ratio;
-  const overallFactor = summary?.overall_on_level_factor ?? cur.overall_on_level_factor ?? 1;
-  const histEP = summary?.total_earned_premium ?? cur.total_earned_premium ?? 0;
-  const olEP = summary?.total_on_level_earned_premium ?? cur.on_level_earned_premium;
-
-  const editEvent = (i: number, field: 'rate_change_pct' | 'effective_date', v: string) =>
-    setEvents(es => es.map((e, j) => j === i ? { ...e, [field]: field === 'rate_change_pct' ? fromDisplay(v, 'pct') : v } : e));
 
   const resetAll = () => { setAssum({ ...base.assumptions }); setMethod(baseMethod); setEvents(rateCtx.events.map(e => ({ ...e }))); };
 
@@ -189,8 +147,8 @@ export default function Indications() {
         We take this segment's earned premium and losses, restate old premium at today's rate level (on-level premium),
         develop losses to their expected final cost, trend them to {period}, then compare the projected loss ratio with
         the loss ratio the price can permit after expenses, commission, reinsurance and profit. The gap is the indicated
-        rate change. The on-level panel below chooses how premium is restated; everything else updates instantly and the
-        waterfall shows what moved the indication.
+        rate change. The on-level method (below) chooses how premium is restated — explore it in detail on the On-level
+        earned premium page; everything else updates instantly and the waterfall shows what moved the indication.
       </Explainer>
 
       <div className="flex flex-wrap items-end gap-3">
@@ -217,87 +175,32 @@ export default function Indications() {
         <Button onClick={() => setSaveOpen(true)} disabled={!dirty}><Save className="h-4 w-4" /> Save as scenario</Button>
       </div>
 
-      {/* ---- On-level premium panel (before the downstream assumptions) ---- */}
-      <Card>
-        <CardContent className="space-y-4 p-4">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <div className="text-xs font-semibold uppercase tracking-wide text-primary">Use case · On-level earned premium</div>
-              <p className="mt-1 max-w-[70ch] text-sm text-muted-foreground">
-                Restates historic earned premium to the reference rate level ({rateCtx.reference_rate_date}), so premium and
-                losses are comparable. <span className="font-medium">{methodLabel(method)}</span>{' '}
-                {method === LEGACY ? '— an annual-index simplification (what a spreadsheet does).' : `— earning-aware, ${rateCtx.policy_term_days}-day policies, straight-line earning.`}
-              </p>
-            </div>
-            <div className="w-64"><Label className="mb-1 block">Method</Label>
-              <Select value={method} onValueChange={setMethod}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>{rateCtx.methods.map(m => <SelectItem key={m} value={m}>{methodLabel(m)}</SelectItem>)}</SelectContent>
-              </Select>
-            </div>
-          </div>
+      {/* On-level method — the detailed exploration lives on the On-level earned premium page */}
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="w-64"><Label className="mb-1 block">On-level method</Label>
+          <Select value={method} onValueChange={setMethod}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>{rateCtx.methods.map(m => <SelectItem key={m} value={m}>{methodLabel(m)}</SelectItem>)}</SelectContent>
+          </Select>
+        </div>
+        <p className="max-w-[62ch] flex-1 text-xs text-muted-foreground">
+          Premium is on-levelled with the <span className="font-medium text-foreground">{methodLabel(method)}</span> method before the
+          indication. See the restated premium, factors and loss ratios in detail on the{' '}
+          <Link to={`/on-level?lob=${lob}&territory=${territory}&period=${period}`} className="text-primary underline">On-level earned premium</Link> page.
+        </p>
+      </div>
 
-          {error && (
-            <div className="flex items-center gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-              <AlertTriangle className="h-4 w-4 shrink-0" /> {error}
-            </div>
-          )}
-
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-            <Kpi label="Historical earned premium" value={money(histEP, meta.currency)} />
-            <Kpi label="On-level earned premium" value={money(olEP, meta.currency)} busy={busy} />
-            <Kpi label="Premium uplift" value={money(uplift, meta.currency)} tone={toneClass(signClass(uplift))} />
-            <Kpi label="Overall on-level factor" value={overallFactor.toFixed(4)} sub={`× ${methodLabel(method).toLowerCase()}`} />
-          </div>
-
-          <div className="grid gap-4 lg:grid-cols-2">
-            <div className="rounded-md border p-3">
-              <div className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">Reported loss ratios (same losses, two denominators)</div>
-              <div className="mt-2 flex items-center gap-6">
-                <div><div className="text-xs text-muted-foreground">Raw (÷ historical EP)</div><div className="text-xl font-bold tnum">{pct(rawLR, 1, false)}</div></div>
-                <div className="text-muted-foreground">→</div>
-                <div><div className="text-xs text-muted-foreground">On-level (÷ on-level EP)</div><div className="text-xl font-bold tnum text-primary">{pct(olLR, 1, false)}</div></div>
-              </div>
-              <p className="mt-2 text-xs text-muted-foreground">Distinct from the trended <em>projected</em> loss ratio below (which also develops &amp; trends the losses).</p>
-            </div>
-
-            <div className="rounded-md border p-3">
-              <div className="mb-2 flex items-center justify-between">
-                <div className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">Rate history (scenario-local)</div>
-                <span className="text-[11px] text-muted-foreground">dates assumed Jan 1 — synthetic</span>
-              </div>
-              <Table>
-                <TableHeader><TableRow><TableHead>Effective date</TableHead><TableHead className="text-right">Rate change</TableHead><TableHead className="text-right">Index</TableHead></TableRow></TableHeader>
-                <TableBody>
-                  {events.map((e, i) => (
-                    <TableRow key={e.event_id || i} className="hover:bg-transparent">
-                      <TableCell>
-                        <Input type="date" value={e.effective_date ?? ''} onChange={ev => editEvent(i, 'effective_date', ev.target.value)} className="h-8 w-36" />
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <Input inputMode="decimal" value={toDisplay('', e.rate_change_pct, 'pct')} onChange={ev => editEvent(i, 'rate_change_pct', ev.target.value)} className="h-8 w-20 text-right tnum" />
-                          <span className="w-3 text-xs text-muted-foreground">%</span>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-right tnum text-muted-foreground">{e.rate_level_index?.toFixed(4) ?? '—'}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-              <p className="mt-1 text-xs text-muted-foreground">Edits are scenario-local — they never change the master history or the approved baseline.</p>
-            </div>
-          </div>
-
-          <OnLevelQA lob={lob} territory={territory} period={period} mode={aiMode} />
-        </CardContent>
-      </Card>
+      {error && (
+        <div className="flex items-center gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          <AlertTriangle className="h-4 w-4 shrink-0" /> {error}
+        </div>
+      )}
 
       <div className="space-y-2">
-        <div className="flex flex-wrap items-baseline gap-2">
-          <span className="text-xs font-semibold uppercase tracking-wide text-primary">Use case · Rate indication</span>
-          <span className="text-xs text-muted-foreground">— the price-change recommendation built from the on-level experience.</span>
-        </div>
+        <p className="max-w-[80ch] text-xs text-muted-foreground">
+          The price-change recommendation built from the on-level experience — the same deterministic engine you can read in the{' '}
+          <span className="font-medium text-foreground">From-spreadsheet-to-Databricks</span> notebook.
+        </p>
         <AgentAction title="Suggest a starting assumption set"
           subtitle="Proposes a draft from the segment's experience — a starting point, not a decision."
           label="Suggest assumptions" icon={<Wand2 className="h-4 w-4" />}

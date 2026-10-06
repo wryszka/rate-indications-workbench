@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { NavLink, Route, Routes, useLocation } from 'react-router-dom';
 import {
   Home as HomeIcon, LayoutGrid, TrendingUp, GitCompare, CheckCircle2, BookOpen,
-  MessageCircleQuestion, Zap, RotateCcw, Menu, X, ShieldCheck,
+  MessageCircleQuestion, Zap, RotateCcw, Menu, X, ShieldCheck, Scale,
 } from 'lucide-react';
 import { MetaProvider, useMeta, useAiMode } from '@/components/common';
 import { ThemeProvider, ThemeToggle } from '@/components/theme';
@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils';
 import { api } from '@/lib/api';
 import Home from '@/pages/Home';
 import Portfolio from '@/pages/Portfolio';
+import OnLevel from '@/pages/OnLevel';
 import Indications from '@/pages/Indications';
 import Scenarios from '@/pages/Scenarios';
 import Review from '@/pages/Review';
@@ -18,14 +19,26 @@ import Governance from '@/pages/Governance';
 import Learn from '@/pages/Learn';
 import Genie from '@/pages/Genie';
 
-const NAV = [
-  { to: '/', label: 'Home', icon: HomeIcon, end: true },
-  { to: '/portfolio', label: 'Portfolio', icon: LayoutGrid },
-  { to: '/indications', label: 'Rate Indications', icon: TrendingUp },
-  { to: '/scenarios', label: 'Scenarios', icon: GitCompare },
-  { to: '/review', label: 'Review & Approve', icon: CheckCircle2 },
-  { to: '/governance', label: 'Governance', icon: ShieldCheck },
+// Grouped sidebar: Overview → Analyse (the use cases) → Decide → Control.
+// "Control" is its own section so audit/governance reads as first-class, not an afterthought.
+const NAV_SECTIONS: { title?: string; items: { to: string; label: string; icon: any; end?: boolean }[] }[] = [
+  { items: [{ to: '/', label: 'Home', icon: HomeIcon, end: true }] },
+  { title: 'Overview', items: [{ to: '/portfolio', label: 'Portfolio', icon: LayoutGrid }] },
+  { title: 'Analyse', items: [
+    { to: '/on-level', label: 'On-level earned premium', icon: Scale },
+    { to: '/indications', label: 'Rate indication', icon: TrendingUp },
+  ] },
+  { title: 'Decide', items: [
+    { to: '/scenarios', label: 'Scenarios', icon: GitCompare },
+    { to: '/review', label: 'Review & Approve', icon: CheckCircle2 },
+  ] },
+  { title: 'Control', items: [{ to: '/governance', label: 'Governance', icon: ShieldCheck }] },
 ];
+
+const navLinkClass = ({ isActive }: { isActive: boolean }) => cn(
+  'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+  isActive ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+);
 
 function AiToggle() {
   const { mode, setMode } = useAiMode();
@@ -81,25 +94,23 @@ function Sidebar({ onNav }: { onNav?: () => void }) {
           <div className="text-[11px] text-muted-foreground">Rate Indications</div>
         </div>
       </div>
-      <nav className="flex-1 space-y-1 overflow-auto px-3 py-2">
-        {NAV.map(n => (
-          <NavLink key={n.to} to={n.to} end={n.end} onClick={onNav}
-            className={({ isActive }) => cn(
-              'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-              isActive ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent hover:text-foreground',
-            )}>
-            <n.icon className="h-4 w-4" />{n.label}
-          </NavLink>
+      <nav className="flex-1 space-y-3 overflow-auto px-3 py-2">
+        {NAV_SECTIONS.map((sec, si) => (
+          <div key={sec.title ?? si} className="space-y-1">
+            {sec.title && <div className="px-3 pt-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/70">{sec.title}</div>}
+            {sec.items.map(n => (
+              <NavLink key={n.to} to={n.to} end={n.end} onClick={onNav} className={navLinkClass}>
+                <n.icon className="h-4 w-4" />{n.label}
+              </NavLink>
+            ))}
+            {/* Ask the book lives in Control, next to Governance */}
+            {sec.title === 'Control' && meta.genie_enabled && (
+              <NavLink to="/ask" onClick={onNav} className={navLinkClass}>
+                <MessageCircleQuestion className="h-4 w-4" />Ask the book
+              </NavLink>
+            )}
+          </div>
         ))}
-        {meta.genie_enabled && (
-          <NavLink to="/ask" onClick={onNav}
-            className={({ isActive }) => cn(
-              'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-              isActive ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent hover:text-foreground',
-            )}>
-            <MessageCircleQuestion className="h-4 w-4" />Ask the book
-          </NavLink>
-        )}
       </nav>
       <div className="border-t p-3">
         {/* Learn sits at the foot, matching the other estate apps */}
@@ -122,7 +133,7 @@ function Sidebar({ onNav }: { onNav?: () => void }) {
 }
 
 const TITLES: Record<string, string> = {
-  '/': 'Home', '/portfolio': 'Portfolio', '/indications': 'Rate Indications',
+  '/': 'Home', '/portfolio': 'Portfolio', '/on-level': 'On-level earned premium', '/indications': 'Rate indication',
   '/scenarios': 'Scenarios', '/review': 'Review & Approve', '/governance': 'Governance', '/learn': 'Learn', '/ask': 'Ask the book',
 };
 
@@ -154,6 +165,7 @@ function Shell() {
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/portfolio" element={<Portfolio />} />
+            <Route path="/on-level" element={<OnLevel />} />
             <Route path="/indications" element={<Indications />} />
             <Route path="/scenarios" element={<Scenarios />} />
             <Route path="/review" element={<Review />} />
