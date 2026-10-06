@@ -144,11 +144,19 @@ def generate(flavour: str = "eu_commercial", version: str = "v1", seed: str = "s
                 ultimate = on_level_prem * seg_lr * rng.uniform(0.94, 1.07)
                 reported = round(ultimate / ldf, 2)
                 paid = round(reported * rng.uniform(0.45, 0.85) * (1 - 0.12 * (ldf - 1)), 2)
-                claim_count = max(1, int((earned / rng.uniform(9000, 16000))))
+                # Exposure and claim counts carry the segment's underlying frequency and
+                # severity trend (for the Loss Trend use case). Same two RNG draws, in the
+                # same order, as before — so premium, losses and the triangle are unchanged
+                # and every indication reproduces exactly. The engine does not use these.
+                n_cnt = 1 + (rng.uniform(9000, 16000) - 12500) / 12500 * 0.10   # ~±3% noise
+                n_exp = 1 + (rng.uniform(6, 10) - 8) / 8 * 0.06                  # ~±1.5% noise
+                pure_premium = seg_lr * 1000 * ((1 + sev) * (1 + freq)) ** i    # loss cost per exposure
+                exposure = ultimate / pure_premium * n_exp
+                claim_count = max(1, int(round(exposure * 0.06 * (1 + freq) ** i * n_cnt)))
                 experience.append(dict(
                     experience_version=version, lob_code=lob_code, territory_code=terr_code,
                     accident_year=yr, earned_premium=earned, written_premium=written,
-                    exposure=round(claim_count * rng.uniform(6, 10), 1), claim_count=claim_count,
+                    exposure=round(exposure, 1), claim_count=claim_count,
                     reported_incurred=reported, paid_to_date=paid,
                     rate_level_index=rl_idx[yr], ldf_to_ultimate=ldf,
                     loss_valuation_date=LOSS_VALUATION_DATE,

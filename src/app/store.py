@@ -728,3 +728,56 @@ async def audit_trail(scenario_id: str) -> list[dict]:
         f"""SELECT log_ts, action, actor, from_status, to_status, calc_version, result_id, note
             FROM {fqn('indication_audit_log')} WHERE scenario_id=:sid ORDER BY log_ts""",
         {"sid": scenario_id})
+
+
+# ---------------------------------------------------------------- loss trend
+def _exp_fit(xs: list[int], ys: list[float]) -> dict[str, float] | None:
+    """Exponential trend y = a·(1+t)^x, fitted by least squares on ln(y). Returns the
+    annual trend t and the fit quality (R²). Transparent on purpose — the same fit an
+    actuary does with LOGEST in Excel."""
+    pts = [(x, y) for x, y in zip(xs, ys) if y and y > 0]
+    if len(pts) < 3:
+        return None
+    import math
+    lx = [p[0] for p in pts]; ly = [math.log(p[1]) for p in pts]
+    mx, my = sum(lx) / len(lx), sum(ly) / len(ly)
+    sxx = sum((x - mx) ** 2 for x in lx)
+    b = sum((x - mx) * (y - my) for x, y in zip(lx, ly)) / sxx
+    a = my - b * mx
+    ss_tot = sum((y - my) ** 2 for y in ly)
+    ss_res = sum((y - (a + b * x)) ** 2 for x, y in zip(lx, ly))
+    return {"trend": math.exp(b) - 1, "r2": (1 - ss_res / ss_tot) if ss_tot else 1.0,
+            "intercept": a, "slope": b}
+
+
+async def loss_trend(lob: str, terr: str, period: int) -> dict[str, Any]:
+    """Loss Trend use case: historic frequency (claims ÷ exposure), severity (developed
+    ultimate ÷ claims) and pure premium (developed ultimate ÷ exposure) by accident year,
+    with fitted annual trends over two windows, next to the trend currently SELECTED in
+    the approved baseline. Read-only; a new selection is saved as a scenario (audited)."""
+    exp, _crl = await _segment_experience(lob, terr)
+    years = []
+    for e in exp:
+        ult = (e.reported_incurred or 0) * (e.ldf_to_ultimate or 1)
+        years.append({
+            "accident_year": e.accident_year, "exposure": e.exposure, "claim_count": e.claim_count,
+            "reported_incurred": e.reported_incurred, "ldf_to_ultimate": e.ldf_to_ultimate,
+            "developed_ultimate": ult,
+            "frequency": (e.claim_count / e.exposure) if e.exposure else None,
+            "severity": (ult / e.claim_count) if e.claim_count else None,
+            "pure_premium": (ult / e.exposure) if e.exposure else None,
+        })
+    xs = [y["accident_year"] for y in years]
+    windows = {"all": len(years), "last5": min(5, len(years))}
+    fits = {}
+    for w, n in windows.items():
+        sub = years[-n:]
+        sx = [y["accident_year"] for y in sub]
+        fits[w] = {"years": [sx[0], sx[-1]] if sx else [],
+                   **{m: _exp_fit(sx, [y[m] for y in sub]) for m in ("frequency", "severity", "pure_premium")}}
+    bsid = await baseline_scenario_id(lob, terr, period)
+    assum, _ = await assumptions_for(bsid)
+    return {"years": years, "fits": fits, "first_year": xs[0] if xs else None,
+            "selected": {"frequency_trend": assum.get("frequency_trend"),
+                         "severity_trend": assum.get("severity_trend")},
+            "baseline_assumptions": assum}

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { NavLink, Route, Routes, useLocation } from 'react-router-dom';
 import {
   Home as HomeIcon, LayoutGrid, TrendingUp, GitCompare, CheckCircle2, BookOpen,
-  MessageCircleQuestion, Zap, RotateCcw, Menu, X, ShieldCheck, Scale,
+  MessageCircleQuestion, Zap, RotateCcw, Menu, X, ShieldCheck, Scale, Activity,
 } from 'lucide-react';
 import { MetaProvider, useMeta, useAiMode } from '@/components/common';
 import { ThemeProvider, ThemeToggle } from '@/components/theme';
@@ -12,6 +12,7 @@ import { api } from '@/lib/api';
 import Home from '@/pages/Home';
 import Portfolio from '@/pages/Portfolio';
 import OnLevel from '@/pages/OnLevel';
+import LossTrend from '@/pages/LossTrend';
 import Indications from '@/pages/Indications';
 import Scenarios from '@/pages/Scenarios';
 import Review from '@/pages/Review';
@@ -26,6 +27,7 @@ const NAV_SECTIONS: { title?: string; items: { to: string; label: string; icon: 
   { title: 'Overview', items: [{ to: '/portfolio', label: 'Portfolio', icon: LayoutGrid }] },
   { title: 'Analyse', items: [
     { to: '/on-level', label: 'On-level earned premium', icon: Scale },
+    { to: '/trend', label: 'Loss trend', icon: Activity },
     { to: '/indications', label: 'Rate indication', icon: TrendingUp },
   ] },
   { title: 'Decide', items: [
@@ -133,7 +135,7 @@ function Sidebar({ onNav }: { onNav?: () => void }) {
 }
 
 const TITLES: Record<string, string> = {
-  '/': 'Home', '/portfolio': 'Portfolio', '/on-level': 'On-level earned premium', '/indications': 'Rate indication',
+  '/': 'Home', '/portfolio': 'Portfolio', '/on-level': 'On-level earned premium', '/trend': 'Loss trend', '/indications': 'Rate indication',
   '/scenarios': 'Scenarios', '/review': 'Review & Approve', '/governance': 'Governance', '/learn': 'Learn', '/ask': 'Ask the book',
 };
 
@@ -166,6 +168,7 @@ function Shell() {
             <Route path="/" element={<Home />} />
             <Route path="/portfolio" element={<Portfolio />} />
             <Route path="/on-level" element={<OnLevel />} />
+            <Route path="/trend" element={<LossTrend />} />
             <Route path="/indications" element={<Indications />} />
             <Route path="/scenarios" element={<Scenarios />} />
             <Route path="/review" element={<Review />} />

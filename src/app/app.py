@@ -71,6 +71,15 @@ async def get_segment(lob: str, territory: str, period: int = 2027):
     return ok({"baseline": detail, "scenarios": scns, "rate_context": rate_context})
 
 
+@app.get("/api/trend")
+async def get_trend(lob: str, territory: str, period: int = 2027):
+    """Loss Trend use case — historic frequency/severity/pure premium + fitted trends."""
+    try:
+        return ok(await store.loss_trend(lob, territory, period))
+    except Exception as e:  # noqa: BLE001
+        return fail("loss trend", e)
+
+
 @app.post("/api/preview")
 async def post_preview(body: dict):
     try:

@@ -127,11 +127,25 @@ async function send<T>(method: string, url: string, body?: any, signal?: AbortSi
   return r.json();
 }
 
+
+export type TrendFit = { trend: number; r2: number; intercept: number; slope: number } | null;
+export type TrendYear = { accident_year: number; exposure: number; claim_count: number; reported_incurred: number;
+  ldf_to_ultimate: number; developed_ultimate: number; frequency: number | null; severity: number | null; pure_premium: number | null };
+export type TrendView = {
+  years: TrendYear[];
+  fits: Record<'all' | 'last5', { years: number[]; frequency: TrendFit; severity: TrendFit; pure_premium: TrendFit }>;
+  first_year: number;
+  selected: { frequency_trend: number; severity_trend: number };
+  baseline_assumptions: Record<string, number>;
+};
+
 export const api = {
   meta: () => get<Meta>('/meta'),
   portfolio: (period: number) => get<Portfolio>(`/portfolio?period=${period}`),
   segment: (lob: string, territory: string, period: number) =>
     get<SegmentView>(`/segment?lob=${lob}&territory=${territory}&period=${period}`),
+  trend: (lob: string, territory: string, period: number) =>
+    get<TrendView>(`/trend?lob=${lob}&territory=${territory}&period=${period}`),
   preview: (lob: string, territory: string, period: number, assumptions: Record<string, number>,
             premium_settings?: PremiumSettings, signal?: AbortSignal) =>
     send<Preview>('POST', '/preview', { lob, territory, period, assumptions, premium_settings }, signal),
