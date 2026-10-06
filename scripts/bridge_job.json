@@ -1,0 +1,14 @@
+{
+  "name": "Rate indication — monthly refresh (GL / Germany)",
+  "description": "The 'orchestrate it' step of the Excel-to-app ladder. Step 1 checks the platform still reproduces the spreadsheet's +6.58% (stops the job if not). Step 2 runs the indication with the approved assumptions and records the run (who, when, inputs, result) in indication_notebook_runs. Schedule paused — press Run now.",
+  "schedule": {"quartz_cron_expression": "0 0 6 1 * ?", "timezone_id": "Europe/London", "pause_status": "PAUSED"},
+  "tasks": [
+    {"task_key": "check_matches_spreadsheet",
+     "notebook_task": {"notebook_path": "/Workspace/Shared/rate-indications-workbench/01_from_spreadsheet_to_tables"}},
+    {"task_key": "run_indication", "depends_on": [{"task_key": "check_matches_spreadsheet"}],
+     "notebook_task": {"notebook_path": "/Workspace/Shared/rate-indications-workbench/03_indication_with_variables",
+                       "base_parameters": {"run_source": "scheduled job"}}}
+  ],
+  "queue": {"enabled": true},
+  "tags": {"demo": "rate-indications", "ai_generated_source": "databricks-agent-skills"}
+}

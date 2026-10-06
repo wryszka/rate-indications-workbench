@@ -178,6 +178,16 @@ display(spark.sql(f"""
 """))
 
 # COMMAND ----------
-# Headline check (lets this notebook be run as a job to confirm it still reconciles to +6.6%).
-print(f"Inline notebook indicated rate change: {indicated:+.4f}")
+# MAGIC %md
+# MAGIC ## A control you can rely on: does it still match the spreadsheet?
+# MAGIC
+# MAGIC The spreadsheet's answer was **+6.58%**. This last cell checks the notebook still lands on it. When the
+# MAGIC notebook runs as a scheduled job, a mismatch **stops the job** before anything downstream runs — so a
+# MAGIC silent change can't slip through.
+
+# COMMAND ----------
+SPREADSHEET_ANSWER = 0.0658          # Indication tab, cell B8, of Indication_GL_DE_2027_v7_FINAL.xlsx
+print(f"Notebook: {indicated:+.4f}   Spreadsheet: {SPREADSHEET_ANSWER:+.4f}")
+assert abs(indicated - SPREADSHEET_ANSWER) < 0.00005, "Notebook no longer matches the spreadsheet — stopping."
+print("✔ Matches the spreadsheet.")
 dbutils.notebook.exit(f"{indicated:.4f}")
