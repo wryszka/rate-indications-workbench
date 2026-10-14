@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { NavLink, Route, Routes, useLocation } from 'react-router-dom';
 import {
   Home as HomeIcon, LayoutGrid, TrendingUp, GitCompare, CheckCircle2, BookOpen,
-  MessageCircleQuestion, Zap, RotateCcw, Menu, X, ShieldCheck, Scale, Activity,
+  MessageCircleQuestion, Zap, RotateCcw, Menu, X, ShieldCheck, Scale, Activity, FileSpreadsheet,
 } from 'lucide-react';
 import { MetaProvider, useMeta, useAiMode } from '@/components/common';
 import { ThemeProvider, ThemeToggle } from '@/components/theme';
@@ -19,6 +19,7 @@ import Review from '@/pages/Review';
 import Governance from '@/pages/Governance';
 import Learn from '@/pages/Learn';
 import Genie from '@/pages/Genie';
+import Spreadsheet from '@/pages/Spreadsheet';
 
 // Grouped sidebar: Overview → Analyse (the use cases) → Decide → Control.
 // "Control" is its own section so audit/governance reads as first-class, not an afterthought.
@@ -32,6 +33,7 @@ const NAV_SECTIONS: { title?: string; items: { to: string; label: string; icon: 
   ] },
   { title: 'Decide', items: [
     { to: '/scenarios', label: 'Scenarios', icon: GitCompare },
+    { to: '/spreadsheet', label: 'Spreadsheet review', icon: FileSpreadsheet },
     { to: '/review', label: 'Review & Approve', icon: CheckCircle2 },
   ] },
   { title: 'Control', items: [{ to: '/governance', label: 'Governance', icon: ShieldCheck }] },
@@ -136,7 +138,7 @@ function Sidebar({ onNav }: { onNav?: () => void }) {
 
 const TITLES: Record<string, string> = {
   '/': 'Home', '/portfolio': 'Portfolio', '/on-level': 'On-level earned premium', '/trend': 'Loss trend', '/indications': 'Rate indication',
-  '/scenarios': 'Scenarios', '/review': 'Review & Approve', '/governance': 'Governance', '/learn': 'Learn', '/ask': 'Ask the book',
+  '/scenarios': 'Scenarios', '/spreadsheet': 'Spreadsheet review', '/review': 'Review & Approve', '/governance': 'Governance', '/learn': 'Learn', '/ask': 'Ask the book',
 };
 
 function Shell() {
@@ -171,6 +173,7 @@ function Shell() {
             <Route path="/trend" element={<LossTrend />} />
             <Route path="/indications" element={<Indications />} />
             <Route path="/scenarios" element={<Scenarios />} />
+            <Route path="/spreadsheet" element={<Spreadsheet />} />
             <Route path="/review" element={<Review />} />
             <Route path="/governance" element={<Governance />} />
             <Route path="/learn" element={<Learn />} />

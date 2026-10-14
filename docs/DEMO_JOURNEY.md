@@ -2,7 +2,8 @@
 
 A demo of a **process**, not an app: how a real actuarial workflow moves onto
 Databricks one small, low-risk step at a time. You start in the customer's world
-(a spreadsheet) and take four steps; the **app is the last step**, not the opening.
+(a spreadsheet) and take four steps; the **app is the last step**, not the opening. An optional
+fifth step shows the spreadsheet colleague working alongside the app (Row Zero).
 Written so a colleague who has never seen it can present it cold.
 
 **The spine:** the same number — **General Liability / Germany, +6.6%** — is
@@ -29,6 +30,8 @@ owner (Step 3) → everyone (Step 4). **Total ≈ 12–15 min.** All data is syn
 | Portfolio (all 15 segments) | GWP **≈ €605.7m**, portfolio indication **+1.51%** ⇒ **≈ €9.1m** of rate movement |
 | Highest segment | **GL / France +7.3%**, then GL / Germany +6.6%, Property / Germany +6.5% |
 | Recorded with every result | `calc_version 1.0.0`, an `experience_version` stamp, author, timestamp |
+| Step 5 — Klaus's spreadsheet change: GL / Germany severity 5.5% → 6.0% | **+6.6% → +8.1%** (+1.5 pts) ⇒ needs **Chief Pricing Actuary** |
+| Step 5 — the review pack | **165 rows** (15 segments × 11 assumptions), seal `37c22c5277181c7c` while the baselines are unchanged |
 
 ## Pre-flight (T-10 min) — do this before the room
 1. **Warehouse warm:** run any quick query on the *Serverless Starter Warehouse*
@@ -46,7 +49,8 @@ owner (Step 3) → everyone (Step 4). **Total ≈ 12–15 min.** All data is syn
    - the **Full Build job** run page (Jobs → search *"Rate Indications — Full Build"* → latest successful run)
    - the **Genie** room: https://fevm-lr-dev-aws-us.cloud.databricks.com/genie/rooms/01f1b74bccf71a3599d56e67452bb182
    - the **app**, already reset: https://rate-indications-workbench-7474656169654171.aws.databricksapps.com  (leave on the Portfolio page)
-5. Skim **`DEMO_QA.md`** — that's where every "yes, but…" answer lives.
+5. **For Step 5 (Row Zero):** be signed in at https://rowzero.com with your Databricks Google account, and have the app's **Spreadsheet review** page one click away. **Reset demo** also clears earlier hand-offs.
+6. Skim **`DEMO_QA.md`** — that's where every "yes, but…" answer lives.
 
 ---
 
@@ -166,6 +170,48 @@ app in Step 4, where the toggle lives).*
 - **CLOSE:** "That's the journey — spreadsheet to governed platform capability, one step
   at a time, nothing lost on the way."
 
+## Step 5 — "Your spreadsheet colleague keeps his spreadsheet" (≈5 min)
+*For the room that asks "but our best actuary will never leave Excel". He doesn't have to — and
+everything is still governed. The colleague is **Klaus Becker, Senior Pricing Actuary, Germany**
+(fictional). The spreadsheet is **Row Zero** — Databricks' spreadsheet, same grid and formulas as Excel.*
+
+**The requirement it answers:** assumption-setting must stay where the experts work, but every change
+needs a record, a reason and an approval — no more emailed `_v7_FINAL` files.
+
+- **GO:** the app → sidebar **Decide → Spreadsheet review**.
+- **DO:**
+  1. **Send** — click **Send review pack** (prepared for Klaus). SAY: "The platform hands him today's
+     *approved* assumptions for every segment, the experience behind them and a seal that proves exactly
+     what was sent. It's in the audit trail already." Click **Download pack (.xlsx)**.
+  2. **Work** — open https://rowzero.com → **Home → File upload** → choose the pack. It opens on the
+     **Assumptions** sheet; the yellow columns are his. Show the **Experience** sheet — the loss-ratio
+     column is a live formula (`=E2/D2`): "his world, his formulas." On the GL / Germany **Severity trend**
+     row type **6%** in `proposed_value` and a reason in `rationale` (e.g. *German liability court awards
+     running ahead of CPI*). For the governance beat, also change GL / Germany **Selected development**
+     1.18 → **1.12** and leave its rationale **empty**.
+  3. **Return** — in Row Zero **File → Download → XLSX**; back in the app choose the file and click
+     **Return workbook**. The table shows **1 accepted** (5.50% → 6.00%) and **1 rejected** — *"changed
+     without a rationale"*. SAY: "He kept total freedom in the spreadsheet. The platform checked every
+     single row on the way back: untouched approved values, sensible numbers, a reason for every change,
+     and nobody else changed the approved value in the meantime."
+  4. **Apply** — click **Apply 1 accepted change(s)**. Watch the audit trail fill in live: scenario created
+     → assumptions taken from the spreadsheet → **indication calculated by the governed engine** →
+     submitted. Result: **GL / Germany +6.6% → +8.1%**, needs **Chief Pricing Actuary**. SAY: "The
+     spreadsheet never produced the official number — the governed engine did, from his inputs."
+  5. **Approve** — **Go to Review & Approve**: Klaus's scenario is in the queue; approve as Chief Pricing
+     Actuary. Back on Spreadsheet review the trail reads sent → returned → checked → applied → approved,
+     with the file's fingerprint.
+- **SAY (close):** "That's cooperation, not conversion: he keeps his spreadsheet, the business keeps the
+  record."
+- **IF ASKED "the file went through my laptop?":** "Today, yes — because this demo's Row Zero isn't
+  connected to our workspace yet. Connected, Klaus imports the pack straight from Databricks and uses
+  **Export to Databricks** (table `rate_indications.rz_assumption_review_return`); the app's **Read Row
+  Zero export** button picks it up — same checks, no file on a laptop. Row Zero can also block downloads."
+- **IF ASKED "where does it all live?":** governed tables `spreadsheet_handoff`, `spreadsheet_review_out`
+  (what was sent), `spreadsheet_review_in` (what came back, untouched), `spreadsheet_review_changes`
+  (each row's outcome and reason) and the volume `spreadsheet_files` (both files kept as evidence) — all
+  in `lr_dev_aws_us_catalog.rate_indications`.
+
 ---
 
 ## Fallbacks — if something misbehaves
@@ -179,6 +225,11 @@ app in Step 4, where the toggle lives).*
   (pre-flight #2) and **Reset demo**; the book is seeded, so the numbers above are exact.
 - **Approval didn't block:** you approved as Pricing Committee (senior enough). Pick
   **Pricing Manager** to show the block.
+- **Step 5 — Row Zero shows 0.055 instead of 5.50%:** its XLSX import drops number formats; the
+  values are right. Type the change as **6%** (or 0.06) — both are read correctly; "6" alone is
+  rejected with a hint.
+- **Step 5 — Apply is slow:** it takes ~25 s per changed segment (each one is created, calculated by
+  the engine and submitted); keep talking over the live audit trail.
 
 ## Q&A
 Every "yes, but…" the room throws — credibility basis, long-tail discounting, on-level

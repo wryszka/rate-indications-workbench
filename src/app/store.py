@@ -289,14 +289,16 @@ async def run_preview(lob: str, terr: str, period: int, assumptions: dict[str, f
 
 # ------------------------------------------------------------------- audit helper
 async def _audit(scenario_id: str, action: str, frm: str | None, to: str | None,
-                 result_id: str | None = None, note: str | None = None) -> None:
+                 result_id: str | None = None, note: str | None = None,
+                 details: dict[str, Any] | None = None) -> None:
     await execute_query(
         f"""INSERT INTO {fqn('indication_audit_log')}
             (event_id, log_ts, scenario_id, action, actor, from_status, to_status,
              calc_version, result_id, note, details)
-            VALUES (:eid, current_timestamp(), :sid, :act, :actor, :frm, :to, :cv, :rid, :note, NULL)""",
+            VALUES (:eid, current_timestamp(), :sid, :act, :actor, :frm, :to, :cv, :rid, :note, :details)""",
         {"eid": str(uuid.uuid4()), "sid": scenario_id, "act": action, "actor": current_user(),
-         "frm": frm, "to": to, "cv": CALC_VERSION, "rid": result_id, "note": note})
+         "frm": frm, "to": to, "cv": CALC_VERSION, "rid": result_id, "note": note,
+         "details": json.dumps(details, default=str) if details else None})
 
 
 # ----------------------------------------------------------------- scenario reads
@@ -370,11 +372,14 @@ async def scenario_detail(scenario_id: str) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------- scenario writes
-async def create_scenario(name: str, lob: str, terr: str, period: int, cloned_from: str | None) -> str:
+async def create_scenario(name: str, lob: str, terr: str, period: int, cloned_from: str | None,
+                          overrides: dict[str, float] | None = None) -> str:
     """New DRAFT scenario. Assumptions copied from the source (or the approved
-    baseline). The baseline_value column always tracks the approved baseline."""
+    baseline), with any `overrides` applied (names from the whitelist only). The
+    baseline_value column always tracks the approved baseline."""
     src = cloned_from or await baseline_scenario_id(lob, terr, period)
     src_cur, base = await assumptions_for(src)
+    src_cur = {**src_cur, **{n: float(v) for n, v in (overrides or {}).items() if n in ASSUMPTION_META}}
     # clone the source's premium settings (method/dates/term/history/overrides)
     src_settings = await scenario_premium_settings(src) or await default_premium_settings(lob, terr)
     sid = f"scn-{lob}-{terr}-{period}-{uuid.uuid4().hex[:8]}"
@@ -390,14 +395,15 @@ async def create_scenario(name: str, lob: str, terr: str, period: int, cloned_fr
             FROM {fqn('indication_experience')}""",
         {"sid": sid, "name": name, "lob": lob, "terr": terr, "period": period,
          "usr": current_user(), "src": (cloned_from or None), "ps": json.dumps(src_settings)})
-    # copy assumptions — one fully-parameterised INSERT per row (no interpolation)
-    for n in ASSUMPTION_ORDER:
-        await execute_query(
-            f"""INSERT INTO {fqn('indication_assumptions')}
-                (scenario_id, assumption_name, assumption_value, baseline_value, unit, updated_by, updated_at)
-                VALUES (:sid, :name, :val, :base, :unit, :usr, current_timestamp())""",
-            {"sid": sid, "name": n, "val": float(src_cur.get(n, 0.0)),
-             "base": float(base.get(n, 0.0)), "unit": ASSUMPTION_META[n]["unit"], "usr": current_user()})
+    # copy assumptions — ONE statement; the rows travel as a single JSON parameter (no interpolation)
+    rows = [{"name": n, "val": float(src_cur.get(n, 0.0)), "base": float(base.get(n, 0.0)),
+             "unit": ASSUMPTION_META[n]["unit"]} for n in ASSUMPTION_ORDER]
+    await execute_query(
+        f"""INSERT INTO {fqn('indication_assumptions')}
+            (scenario_id, assumption_name, assumption_value, baseline_value, unit, updated_by, updated_at)
+            SELECT :sid, r.name, r.val, r.base, r.unit, :usr, current_timestamp()
+            FROM (SELECT explode(from_json(:rows, 'array<struct<name: STRING, val: DOUBLE, base: DOUBLE, unit: STRING>>')) AS r)""",
+        {"sid": sid, "rows": json.dumps(rows), "usr": current_user()})
     await _audit(sid, "CREATE", None, "DRAFT", note=(f"cloned from {cloned_from}" if cloned_from else "new draft"))
     return sid
 

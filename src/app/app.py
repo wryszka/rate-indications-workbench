@@ -17,6 +17,7 @@ import agents
 import genie
 import on_level
 import platform_agent
+import spreadsheet
 
 
 def _f(x):
@@ -212,6 +213,80 @@ async def export_result(sid: str):
                     headers={"Content-Disposition": f'attachment; filename="{sid}.csv"'})
 
 
+# ---------------------------------------------------------------- spreadsheet hand-off
+@app.get("/api/spreadsheet")
+async def spreadsheet_list():
+    return ok({"handoffs": await spreadsheet.list_handoffs(), "default_persona": spreadsheet.DEFAULT_PERSONA})
+
+
+@app.post("/api/spreadsheet/send")
+async def spreadsheet_send(body: dict | None = None):
+    body = body or {}
+    try:
+        return ok(await spreadsheet.send(body.get("persona"), int(body.get("period", 2027))))
+    except spreadsheet.HandoffError as e:
+        return err(str(e))
+    except Exception as e:  # noqa: BLE001
+        return fail("send to spreadsheet", e)
+
+
+@app.get("/api/spreadsheet/{hid}")
+async def spreadsheet_detail(hid: str):
+    try:
+        return ok(await spreadsheet.detail(hid))
+    except spreadsheet.HandoffError as e:
+        return err(str(e), 404)
+
+
+@app.get("/api/spreadsheet/{hid}/pack")
+async def spreadsheet_pack(hid: str):
+    try:
+        name, data = await spreadsheet.pack(hid)
+    except spreadsheet.HandoffError as e:
+        return err(str(e), 404)
+    except Exception as e:  # noqa: BLE001
+        return fail("download pack", e, 404)
+    return Response(content=data,
+                    media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
+@app.post("/api/spreadsheet/{hid}/return")
+async def spreadsheet_return(hid: str, request: Request, filename: str):
+    """The returned workbook arrives as the raw request body (xlsx or csv); filename says which."""
+    data = await request.body()
+    if not data:
+        return err("empty file")
+    if len(data) > 20 * 1024 * 1024:
+        return err("file too large (20 MB limit)")
+    try:
+        return ok(await spreadsheet.receive(hid, filename, data))
+    except spreadsheet.HandoffError as e:
+        return err(str(e))
+    except Exception as e:  # noqa: BLE001
+        return fail("return workbook", e)
+
+
+@app.post("/api/spreadsheet/{hid}/pull-rowzero")
+async def spreadsheet_pull_rowzero(hid: str):
+    try:
+        return ok(await spreadsheet.pull_rowzero(hid))
+    except spreadsheet.HandoffError as e:
+        return err(str(e))
+    except Exception as e:  # noqa: BLE001
+        return fail("read Row Zero export", e)
+
+
+@app.post("/api/spreadsheet/{hid}/apply")
+async def spreadsheet_apply(hid: str):
+    try:
+        return ok(await spreadsheet.start_apply(hid))
+    except spreadsheet.HandoffError as e:
+        return err(str(e))
+    except Exception as e:  # noqa: BLE001
+        return fail("apply spreadsheet changes", e)
+
+
 @app.get("/api/ai-mode")
 async def get_ai_mode():
     return ok({"mode": config.ai_mode()})
@@ -227,6 +302,7 @@ async def reset(body: dict | None = None):
     """Rebuild the book + reseed the audited baselines to a pristine, deterministic
     state (clears app-created scenarios). Triggers the governed Full Build job."""
     try:
+        await spreadsheet.reset()
         return ok(await store.trigger_reset())
     except Exception as e:  # noqa: BLE001
         return fail("reset", e)
@@ -378,6 +454,7 @@ async def learn():
 # UC "Rate indication" is the full price-change workflow that consumes it. One engine, two lenses.
 _UC_ONLEVEL = "On-level earned premium"
 _UC_INDICATION = "Rate indication"
+_UC_SPREADSHEET = "Spreadsheet review"
 
 LEARN_CARDS = [
     # ---- Use case: On-level earned premium ----
@@ -411,6 +488,19 @@ LEARN_CARDS = [
      "links": [{"label": "indication_scenarios", "kind": "table"}]},
     {"use_case": _UC_INDICATION, "n": 5, "group": "Compound the book", "activity": "I submit for review; a colleague approves by role depending on the size of the change — and anyone can reproduce it.",
      "how": "Draft -> Submitted -> Reviewed -> Approved, routed + enforced by approval_role; every step is an append-only audit event tying the number to method + input version + author.",
+     "links": [{"label": "indication_audit_log", "kind": "table"}]},
+    # ---- Use case: Spreadsheet review (the Excel colleague's round trip) ----
+    {"use_case": _UC_SPREADSHEET, "n": 1, "group": "Send", "activity": "I send a colleague who lives in spreadsheets a workbook of today's approved assumptions, with the experience behind them.",
+     "how": "A sealed snapshot (spreadsheet_review_out) of every segment x assumption, written as an XLSX pack to the spreadsheet_files volume; the seal proves which approved values were sent.",
+     "links": [{"label": "spreadsheet_review_out", "kind": "table"}, {"label": "spreadsheet_handoff", "kind": "table"}]},
+    {"use_case": _UC_SPREADSHEET, "n": 2, "group": "Work", "activity": "They work in Row Zero (or Excel) their own way — formulas, pivots, extra sheets — and change only the proposed value and the reason.",
+     "how": "Nothing is locked in the spreadsheet itself; the contract is two columns. Their own workings stay theirs and are ignored on return.",
+     "links": [{"label": "spreadsheet_files", "kind": "volume"}]},
+    {"use_case": _UC_SPREADSHEET, "n": 3, "group": "Check", "activity": "The workbook comes back and every row is checked: untouched approved values, sensible numbers, a reason for every change, no clash with a newer approval.",
+     "how": "The file is kept as evidence with its hash; rows land untouched in spreadsheet_review_in; each outcome and its reason is recorded in spreadsheet_review_changes. With Row Zero connected, its Export to Databricks table replaces the file.",
+     "links": [{"label": "spreadsheet_review_in", "kind": "table"}, {"label": "spreadsheet_review_changes", "kind": "table"}]},
+    {"use_case": _UC_SPREADSHEET, "n": 4, "group": "Apply", "activity": "Accepted changes become scenarios, recalculated and sent for approval — the spreadsheet never produces the official number.",
+     "how": "One governed scenario per segment via the same engine and approval routing as everywhere else; every step is an append-only audit event linking file, change, calculation and sign-off.",
      "links": [{"label": "indication_audit_log", "kind": "table"}]},
 ]
 

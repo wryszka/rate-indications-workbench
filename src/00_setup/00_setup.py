@@ -176,5 +176,41 @@ spark.sql(f"""CREATE OR REPLACE FUNCTION {FQ}.fn_governance_evidence()
 print("Governed UC functions created (agent tool surface).")
 
 # COMMAND ----------
+# ---- Spreadsheet hand-off (the Excel colleague's round trip; Row Zero today via file, later connected) ----
+# A hand-off sends a sealed snapshot of the approved assumptions to a spreadsheet, takes the edited
+# workbook back, checks every change against the snapshot, and only then turns accepted changes into
+# governed scenarios. Files land in the `spreadsheet_files` volume as evidence (out/ = sent, in/ = returned).
+# When Row Zero is connected to this workspace, its "Export to Databricks" writes `rz_assumption_review_return`
+# (Row Zero requires the rz_ prefix) and the app reads that instead of an uploaded file — same checks after.
+# The app service principal needs READ VOLUME + WRITE VOLUME on the volume (granted alongside its schema grants).
+spark.sql(f"CREATE VOLUME IF NOT EXISTS {FQ}.spreadsheet_files COMMENT 'Spreadsheet hand-off evidence: packs sent (out/) and workbooks returned (in/).'")
+
+spark.sql(f"""CREATE TABLE IF NOT EXISTS {FQ}.spreadsheet_handoff (
+  handoff_id STRING, author_persona STRING, sent_by STRING, sent_at TIMESTAMP,
+  indication_period INT, experience_version STRING, row_count INT, seal STRING, pack_path STRING,
+  status STRING, returned_by STRING, returned_at TIMESTAMP, return_source STRING, return_path STRING,
+  return_sha256 STRING, accepted INT, rejected INT, unchanged INT,
+  applied_by STRING, applied_at TIMESTAMP, applied_scenarios STRING
+) COMMENT 'One row per spreadsheet hand-off: what was sent, to whom, when it came back and what was applied.'""")
+
+spark.sql(f"""CREATE TABLE IF NOT EXISTS {FQ}.spreadsheet_review_out (
+  handoff_id STRING, row_id STRING, lob_code STRING, territory_code STRING, product STRING, territory STRING,
+  assumption_name STRING, assumption_label STRING, unit STRING, current_value DOUBLE, baseline_scenario_id STRING
+) COMMENT 'Sealed snapshot sent to the spreadsheet: one row per segment x assumption, with the approved current value.'""")
+
+spark.sql(f"""CREATE TABLE IF NOT EXISTS {FQ}.spreadsheet_review_in (
+  handoff_id STRING, row_id STRING, product STRING, territory STRING, assumption STRING, unit STRING,
+  current_value_returned STRING, proposed_value_raw STRING, rationale STRING,
+  source STRING, source_path STRING, source_sha256 STRING, loaded_by STRING, loaded_at TIMESTAMP
+) COMMENT 'Landing table: the rows exactly as they came back from the spreadsheet, before any checks.'""")
+
+spark.sql(f"""CREATE TABLE IF NOT EXISTS {FQ}.spreadsheet_review_changes (
+  handoff_id STRING, row_id STRING, lob_code STRING, territory_code STRING, assumption_name STRING,
+  current_value DOUBLE, proposed_value DOUBLE, rationale STRING, check_status STRING, reason STRING,
+  checked_by STRING, checked_at TIMESTAMP, applied_scenario_id STRING
+) COMMENT 'Outcome of checking each returned row: accepted, rejected (with the reason) or unchanged.'""")
+print("Spreadsheet hand-off tables + volume ready.")
+
+# COMMAND ----------
 print("Setup complete. Tables:")
 display(spark.sql(f"SHOW TABLES IN {FQ}"))

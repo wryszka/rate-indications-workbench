@@ -148,3 +148,46 @@ high-consensus fixes; labelled the larger architectural gap honestly.
   can return the path without it — prepend `/Workspace` before adding to `sys.path`.
 - Serverless Spark Connect can't infer a schema for all-`None` columns; build DataFrames
   against the existing DDL schema (`spark.table(t).schema`).
+
+## 2026-10-14 — Spreadsheet review: the Excel colleague's governed round trip (Row Zero)
+
+**What:** new app page **Decide → Spreadsheet review** + `src/app/spreadsheet.py`. Send a sealed review
+pack (XLSX: Read me / Assumptions / Experience / Indications) → the colleague works in Row Zero (or Excel)
+→ the workbook comes back → every row is checked → accepted changes become governed scenarios, calculated
+by the engine and submitted for size-routed approval. Every step is an `indication_audit_log` event.
+
+**Decisions**
+- **Two-column contract.** Only `proposed_value` and `rationale` come back; extra sheets/columns are the
+  author's own and ignored. Locked columns (`handoff_id`, `row_id`, labels, `current_value`) prove which
+  approved value was reviewed — editing them rejects the row.
+- **Checks, each with a stated reason:** unknown/duplicate rows, locked-column edits, unparseable values,
+  percent typed as a whole number ("6" → hint "0.06 or 6%"; "6%" and German "6,0 %" accepted), plausible
+  range per assumption (typo guard, not a pricing opinion), whole years, **rationale required for every
+  change**, conflict if the approved value changed after the pack was sent, provisions together ≥ 90%.
+- **The spreadsheet never produces the official number.** Accepted changes → `create_scenario(overrides=…)`
+  → `record_calculation` → `submit`; approval routing is the existing `approval_role` gate.
+- **File today, connected tomorrow, same backend.** This Row Zero org can't create a connection to our
+  workspace yet, so the pack/return travel as files (kept in volume `spreadsheet_files`, hashed). When
+  connected, Row Zero's *Export to Databricks* writes `rz_assumption_review_return` (Row Zero requires the
+  `rz_` prefix and does CREATE OR REPLACE) and **Read Row Zero export** feeds the same landing + checks.
+  Tested by simulating that table. Row Zero's row-level (UPDATE/UPSERT) write-back is listed as upcoming;
+  the landing-then-check design doesn't depend on it.
+- **"Data comes somehow" = the existing governed book + monthly refresh job.** No new experience drop:
+  baselines pin `experience_version`, and a new version would move the +6.6% spine and the notebook
+  control cell. Revisit with a versioned quarterly drop if the story needs it.
+- **Apply runs in the background** (~25 s per segment on the Serverless Starter warehouse); the page polls
+  and the audit events arrive live. Segments are applied sequentially (concurrent UPDATEs on the same Delta
+  tables risk write conflicts). `create_scenario` now inserts its 11 assumptions in one statement (was 11).
+- **Identity is honest.** Every write is attributed to the signed-in user; Klaus is recorded as the
+  *author persona* in notes/details, never as the actor. Segregation of duties stays role-based (as
+  elsewhere in the app), not identity-enforced, in this demo.
+- **Reset** clears hand-off tables (`spreadsheet.reset()` before `trigger_reset`); files stay in the volume
+  as evidence and the append-only audit log keeps the record.
+
+**Verified 2026-10-14 on DEV (deployment 01f1c7b7…):** send → real Row Zero upload (all 4 sheets, yellow
+fills and formulas survive; number formats don't) → edit in Row Zero → XLSX download → return: 1 accepted
+(GL/DE severity 5.50% → 6.00%), 1 rejected (no rationale) → apply: **+6.6% → +8.1%**, needs Chief Pricing
+Actuary → approved in Review. Baseline stayed +6.58%.
+
+**Grants:** app SP needs `READ VOLUME, WRITE VOLUME` on `spreadsheet_files` (granted; schema MODIFY/SELECT
+already cover the four new tables).

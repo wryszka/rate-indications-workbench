@@ -104,6 +104,28 @@ export type GovernanceOverview = {
   questions: GovQuestion[];
 };
 
+// spreadsheet hand-off (the Excel colleague's governed round trip)
+export type Handoff = {
+  handoff_id: string; author_persona: string; sent_by: string; sent_at: string; status: string;
+  indication_period?: number; experience_version?: string; row_count?: number; seal?: string;
+  returned_by?: string | null; returned_at?: string | null; return_source?: string | null;
+  return_sha256?: string | null; accepted: number | null; rejected: number | null; unchanged: number | null;
+  applied_at?: string | null;
+};
+export type HandoffChange = {
+  row_id: string; lob_code: string | null; territory_code: string | null; assumption_name: string | null;
+  product: string | null; territory: string | null; assumption_label: string | null; unit: string | null;
+  current_value: number | null; proposed_value: number | null; rationale: string | null;
+  check_status: 'ACCEPTED' | 'REJECTED' | 'UNCHANGED'; reason: string; applied_scenario_id: string | null;
+};
+export type HandoffScenario = Scenario & { baseline_indicated: number | null; requires: string };
+export type HandoffEvent = { log_ts: string; scenario_id: string; action: string; actor: string; note: string | null };
+export type HandoffDetail = {
+  handoff: Handoff; changes: HandoffChange[]; scenarios: HandoffScenario[]; events: HandoffEvent[];
+  rowzero_table: string; apply_error: string | null;
+};
+export type HandoffCheck = { handoff_id: string; accepted: number; rejected: number; unchanged: number };
+
 export class ApiError extends Error {
   status: number; body: any;
   constructor(message: string, status: number, body: any) { super(message); this.status = status; this.body = body; }
@@ -186,6 +208,21 @@ export const api = {
     send<AgentResult>('POST', '/agent/interrogate', { lob, territory, period, question, mode }),
   agentCommitteePaper: (scenario_id: string, mode?: string) =>
     send<AgentResult>('POST', '/agent/committee-paper', { scenario_id, mode }),
+  handoffs: () => get<{ handoffs: Handoff[]; default_persona: string }>('/spreadsheet'),
+  handoff: (id: string) => get<HandoffDetail>(`/spreadsheet/${id}`),
+  sendToSpreadsheet: (persona?: string) =>
+    send<{ handoff_id: string; rows: number; segments: number; seal: string; experience_version: string }>(
+      'POST', '/spreadsheet/send', { persona }),
+  packUrl: (id: string) => `/api/spreadsheet/${id}/pack`,
+  returnWorkbook: async (id: string, file: File): Promise<HandoffCheck> => {
+    const r = await fetch(`/api/spreadsheet/${id}/return?filename=${encodeURIComponent(file.name)}`, {
+      method: 'POST', headers: { 'content-type': 'application/octet-stream' }, body: file,
+    });
+    if (!r.ok) return parseErr(r);
+    return r.json();
+  },
+  pullRowZero: (id: string) => send<HandoffCheck>('POST', `/spreadsheet/${id}/pull-rowzero`),
+  applyHandoff: (id: string) => send<{ handoff_id: string; status: string }>('POST', `/spreadsheet/${id}/apply`),
   getGovernance: (period?: number) => get<GovernanceOverview>(`/governance${period ? `?period=${period}` : ''}`),
   agentGovernance: (question: string, mode?: string) =>
     send<AgentResult>('POST', '/agent/governance', { question, mode }),
