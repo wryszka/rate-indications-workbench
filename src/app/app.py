@@ -7,7 +7,7 @@ import csv
 import io
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 import config
@@ -506,6 +506,17 @@ LEARN_CARDS = [
 
 
 # ---- static SPA (built frontend) ----
+# Client-side routes (/spreadsheet, /review, …) must load directly too (deep links from the hub),
+# so any non-API path that isn't a built file falls back to index.html.
 _DIST = Path(__file__).resolve().parent / "frontend" / "dist"
 if _DIST.exists():
-    app.mount("/", StaticFiles(directory=str(_DIST), html=True), name="spa")
+    app.mount("/assets", StaticFiles(directory=str(_DIST / "assets")), name="assets")
+
+    @app.get("/{path:path}", include_in_schema=False)
+    async def spa(path: str):
+        if path.startswith("api/"):
+            return err("not found", 404)
+        f = (_DIST / path).resolve()
+        if path and f.is_file() and _DIST in f.parents:
+            return FileResponse(f)
+        return FileResponse(_DIST / "index.html")
