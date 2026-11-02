@@ -10,7 +10,7 @@
 # Install only the extras (mlflow/pydantic/databricks-sdk are preinstalled on serverless).
 # In-notebook %pip resolves incrementally against the base — avoids the env-spec
 # ResolutionTooDeep. langgraph pinned to narrow the search.
-# MAGIC %pip install -q databricks-langchain "langgraph==0.3.4" databricks-agents
+# MAGIC %pip install -q databricks-langchain "langgraph==0.3.4" databricks-agents uv
 # MAGIC %restart_python
 
 # COMMAND ----------
